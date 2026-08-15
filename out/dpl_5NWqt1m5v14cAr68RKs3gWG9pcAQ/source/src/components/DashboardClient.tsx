@@ -12,18 +12,21 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Card, Certificate, CertRedemption, Trip, PinnedNote } from '@/types/db'
+import type { Card, Certificate, CertRedemption, Trip, PinnedNote, CardPoints, PointTransaction } from '@/types/db'
 import type { EnrichedCredit } from '@/types/enriched'
 import TodayPage from '@/components/TodayPage'
+import PointsPage from '@/components/PointsPage'
 
 interface Props {
-  cards:            Card[]
-  credits:          EnrichedCredit[]
-  certificates:     Certificate[]
-  certRedemptions:  CertRedemption[]
-  trips:            Trip[]
-  notes:            PinnedNote[]
-  today:            string
+  cards:              Card[]
+  credits:            EnrichedCredit[]
+  certificates:       Certificate[]
+  certRedemptions:    CertRedemption[]
+  trips:              Trip[]
+  notes:              PinnedNote[]
+  cardPoints:         CardPoints[]
+  pointTransactions:  PointTransaction[]
+  today:              string
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -1116,8 +1119,8 @@ function HotelLibraryPage() {
 
 // ── Main dashboard ─────────────────────────────────────────────
 
-export default function DashboardClient({ cards, credits: initialCredits, certificates, certRedemptions, trips, notes, today }: Props) {
-  const [tab, setTab] = useState<'today' | 'credits' | 'certs' | 'trips' | 'notes' | 'hotels'>('today')
+export default function DashboardClient({ cards, credits: initialCredits, certificates, certRedemptions, trips, notes, cardPoints, pointTransactions, today }: Props) {
+  const [tab, setTab] = useState<'today' | 'credits' | 'points' | 'certs' | 'trips' | 'notes' | 'hotels'>('today')
   const [credits, setCredits] = useState(initialCredits)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const router = useRouter()
@@ -1163,6 +1166,7 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
   const tabs = [
     { id: 'today'   as const, label: 'Today',         icon: '🎯' },
     { id: 'credits' as const, label: 'Credits',       icon: '💳' },
+    { id: 'points'  as const, label: 'Points',        icon: '⭐' },
     { id: 'certs'   as const, label: 'Certificates',  icon: '🎟' },
     { id: 'trips'   as const, label: 'Trips',         icon: '✈️' },
     { id: 'hotels'  as const, label: 'Hotel Library', icon: '🏨' },
@@ -1255,6 +1259,9 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
           )}
           {tab === 'credits' && (
             <CreditsPage cards={cards} credits={credits} onToggle={handleToggle} today={today} />
+          )}
+          {tab === 'points' && (
+            <PointsPage cards={cards} cardPoints={cardPoints} pointTransactions={pointTransactions} />
           )}
           {tab === 'certs' && (
             <CertsPage certificates={certificates} cards={cards} certRedemptions={certRedemptions} today={today} />

@@ -172,6 +172,25 @@ export interface DiningLibrary {
   created_at:     string
 }
 
+export interface CardPoints {
+  id:                     string
+  card_id:                string
+  program_name:           string
+  balance:                number
+  value_per_point_cents:  number
+  created_at:             string
+  updated_at:             string
+}
+
+export interface PointTransaction {
+  id:              string
+  card_points_id:  string
+  delta:           number
+  note:            string | null
+  occurred_on:     string   // ISO date
+  created_at:      string
+}
+
 export interface PinnedNote {
   id:         string
   title:      string
@@ -199,6 +218,8 @@ export interface Database {
       rate_cache:      { Row: RateCache;     Insert: Partial<RateCache>;     Update: Partial<RateCache>     }
       dining_library:  { Row: DiningLibrary; Insert: Partial<DiningLibrary>; Update: Partial<DiningLibrary> }
       pinned_notes:    { Row: PinnedNote;    Insert: Partial<PinnedNote>;    Update: Partial<PinnedNote>    }
+      card_points:       { Row: CardPoints;       Insert: Partial<CardPoints>;       Update: Partial<CardPoints>       }
+      point_transactions:{ Row: PointTransaction; Insert: Partial<PointTransaction>; Update: Partial<PointTransaction> }
     }
     Views:   Record<string, never>
     Functions: Record<string, never>

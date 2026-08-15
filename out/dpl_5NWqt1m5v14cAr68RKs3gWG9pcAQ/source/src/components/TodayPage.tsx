@@ -35,6 +35,14 @@ type QueueItem = {
   urg: Urgency
 }
 
+// Credits hidden from the Today tab entirely (still visible on the Credits tab).
+// Matched by exact name.
+const HIDDEN_ON_TODAY = new Set<string>([
+  'Global Entry / TSA PreCheck — $120 every 4 years',
+  'CLEAR+',
+  'Blacklane Credit',
+])
+
 export default function TodayPage({ cards, credits, onToggle, today: todayStr }: {
   cards: Card[]
   credits: EnrichedCredit[]
@@ -44,6 +52,13 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
   const today = useMemo(() => new Date(todayStr), [todayStr])
   const cardMap = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards])
   const [justUsed, setJustUsed] = useState<Set<string>>(new Set())
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const toggleGroup = (name: string) =>
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name); else next.add(name)
+      return next
+    })
 
   // ── Scoreboard math ─────────────────────────────────────────
   const counted = credits.filter(c => !c.single_instance || c.is_primary_instance)
@@ -77,6 +92,7 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
     const items: QueueItem[] = []
     for (const c of credits) {
       if (c.autopilot) continue
+      if (HIDDEN_ON_TODAY.has(c.name)) continue
       if (c.is_used && !justUsed.has(c.id)) continue
       if (c.single_instance && !c.is_primary_instance) continue
       const card = cardMap.get(c.card_id)
@@ -102,6 +118,21 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
     .reduce((s, q) => s + q.credit.remaining_cents, 0)
   const critical = queue.filter(q => q.urg === 'critical' && !q.credit.is_used)
 
+  // ── Group same-name queue items (e.g. "Plat Hotel Credit (FHR/THC)" x 6) ──
+  // Order preserved from `queue` (already sorted by deadline → value); each
+  // group surfaces at the position of its first (soonest) instance.
+  type Group = { name: string; items: QueueItem[] }
+  const groupedQueue: Group[] = useMemo(() => {
+    const order: string[] = []
+    const map = new Map<string, QueueItem[]>()
+    for (const item of queue) {
+      const key = item.credit.name
+      if (!map.has(key)) { map.set(key, []); order.push(key) }
+      map.get(key)!.push(item)
+    }
+    return order.map(name => ({ name, items: map.get(name)! }))
+  }, [queue])
+
   const handleUse = (id: string) => {
     setJustUsed(prev => new Set(prev).add(id))
     onToggle(id, true)
@@ -113,6 +144,56 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
 
   const dateFmt = (d: Date) =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+  // Renders one instance row (used both for single-item groups and for
+  // each item nested inside an expanded multi-instance group).
+  const ItemRow = ({ credit, card, end, days, urg, nested }: QueueItem & { nested?: boolean }) => {
+    const st = URGENCY_STYLE[urg]
+    const used = credit.is_used
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: nested ? '10px 16px 10px 40px' : '12px 16px',
+        background: used ? 'rgba(22,101,52,.05)' : (nested ? '#fbf9f5' : '#fff'),
+        borderTop: '1px solid var(--sand)',
+      }}>
+        <span style={{
+          fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+          background: used ? '#dcfce7' : st.bg, color: used ? '#166534' : st.fg,
+          flexShrink: 0, minWidth: 64, textAlign: 'center',
+        }}>
+          {used ? '✓ Used' : days === 0 ? 'Today!' : `${days}${st.label}`}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontSize: 14, fontWeight: 500,
+            textDecoration: used ? 'line-through' : 'none',
+            color: used ? 'var(--bark)' : 'var(--ink)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {credit.name}
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 1 }}>
+            {card.owner === 'katie' ? 'Katie' : 'Stephen'} · {card.display_name} · resets {dateFmt(end)}
+          </p>
+        </div>
+        <span style={{ fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+          {fmtAmount(credit.remaining_cents > 0 ? credit.remaining_cents : credit.amount_cents)}
+        </span>
+        {used ? (
+          <button onClick={() => handleUndo(credit.id)} style={{
+            fontSize: 12, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+            background: 'transparent', border: '1px solid var(--sand)', color: 'var(--bark)', flexShrink: 0,
+          }}>Undo</button>
+        ) : (
+          <button onClick={() => handleUse(credit.id)} style={{
+            fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+            background: 'var(--ox)', border: 'none', color: '#fff', flexShrink: 0,
+          }}>Mark used</button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -159,50 +240,48 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
             Everything is used up this period. Nothing to do. 🎉
           </p>
         )}
-        {queue.map(({ credit, card, end, days, urg }, i) => {
-          const st = URGENCY_STYLE[urg]
-          const used = credit.is_used
+        {groupedQueue.map(({ name, items }, i) => {
+          if (items.length === 1) {
+            return <ItemRow key={items[0].credit.id} {...items[0]} />
+          }
+          // Multi-instance group: collapsed "Name x N" row, expands to a dropdown
+          const soonest = items[0] // items are already deadline-sorted within queue
+          const st = URGENCY_STYLE[soonest.urg]
+          const open = expandedGroups.has(name)
           return (
-            <div key={credit.id} style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '12px 16px',
-              borderTop: i === 0 ? 'none' : '1px solid var(--sand)',
-              background: used ? 'rgba(22,101,52,.05)' : '#fff',
-            }}>
-              <span style={{
-                fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
-                background: used ? '#dcfce7' : st.bg, color: used ? '#166534' : st.fg,
-                flexShrink: 0, minWidth: 64, textAlign: 'center',
-              }}>
-                {used ? '✓ Used' : days === 0 ? 'Today!' : `${days}${st.label}`}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{
-                  fontSize: 14, fontWeight: 500,
-                  textDecoration: used ? 'line-through' : 'none',
-                  color: used ? 'var(--bark)' : 'var(--ink)',
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            <div key={name}>
+              <div
+                onClick={() => toggleGroup(name)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '12px 16px', cursor: 'pointer',
+                  borderTop: i === 0 ? 'none' : '1px solid var(--sand)',
+                  background: open ? '#fdf8f2' : '#fff',
+                }}
+              >
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                  background: st.bg, color: st.fg, flexShrink: 0, minWidth: 64, textAlign: 'center',
                 }}>
-                  {credit.name}
-                </p>
-                <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 1 }}>
-                  {card.owner === 'katie' ? 'Katie' : 'Stephen'} · {card.display_name} · resets {dateFmt(end)}
-                </p>
+                  {soonest.days === 0 ? 'Today!' : `${soonest.days}${st.label}`}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{
+                    fontSize: 14, fontWeight: 500, color: 'var(--ink)',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {name} <span style={{ color: 'var(--bark)', fontWeight: 400 }}>x {items.length}</span>
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 1 }}>
+                    {items.length} unused · tap to {open ? 'collapse' : 'expand'}
+                  </p>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+                  {fmtAmount(items.reduce((s, it) => s + (it.credit.remaining_cents > 0 ? it.credit.remaining_cents : it.credit.amount_cents), 0))}
+                </span>
+                <span style={{ color: 'var(--bark)', flexShrink: 0, transform: open ? 'rotate(180deg)' : '', transition: 'transform .15s' }}>▾</span>
               </div>
-              <span style={{ fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
-                {fmtAmount(credit.remaining_cents > 0 ? credit.remaining_cents : credit.amount_cents)}
-              </span>
-              {used ? (
-                <button onClick={() => handleUndo(credit.id)} style={{
-                  fontSize: 12, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
-                  background: 'transparent', border: '1px solid var(--sand)', color: 'var(--bark)', flexShrink: 0,
-                }}>Undo</button>
-              ) : (
-                <button onClick={() => handleUse(credit.id)} style={{
-                  fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
-                  background: 'var(--ox)', border: 'none', color: '#fff', flexShrink: 0,
-                }}>Mark used</button>
-              )}
+              {open && items.map(item => <ItemRow key={item.credit.id} {...item} nested />)}
             </div>
           )
         })}
