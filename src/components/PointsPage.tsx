@@ -1,13 +1,14 @@
 'use client'
 
 /**
- * PointsPage — one card per row: current balance, estimated $ value,
- * add/redeem forms (amount + note + date), and a transaction history.
+ * PointsPage — one row per person per issuer (e.g. "American Express
+ * (Stephen)"), not per card. Shows balance, estimated $ value using a
+ * realistic per-program valuation, add/redeem forms, and history.
  */
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Card, CardPoints, PointTransaction } from '@/types/db'
+import type { PointsAccount, PointTransaction } from '@/types/db'
 
 const fmtUsd = (dollars: number) =>
   '$' + dollars.toLocaleString(undefined, { maximumFractionDigits: 0 })
@@ -17,15 +18,26 @@ const todayIso = () => new Date().toISOString().slice(0, 10)
 const dateFmt = (iso: string) =>
   new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
+// Display label for the issuer, independent of the stored program_name
+// (which can be edited freely) — used for the card header only.
+const NETWORK_LABEL: Record<string, string> = {
+  amex: 'American Express',
+  chase: 'Chase',
+  citi: 'Citi',
+  marriott: 'Marriott',
+  ihg: 'IHG',
+  hilton: 'Hilton',
+  southwest: 'Southwest',
+}
+
 interface Props {
-  cards: Card[]
-  cardPoints: CardPoints[]
+  pointsAccounts: PointsAccount[]
   pointTransactions: PointTransaction[]
 }
 
-// ── One card's points block ─────────────────────────────────
+// ── One issuer's points block (per person) ──────────────────
 
-function CardPointsRow({ card, cp, txs }: { card: Card; cp: CardPoints; txs: PointTransaction[] }) {
+function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[] }) {
   const router = useRouter()
   const [mode, setMode] = useState<'none' | 'add' | 'redeem'>('none')
   const [amount, setAmount] = useState('')
@@ -33,11 +45,11 @@ function CardPointsRow({ card, cp, txs }: { card: Card; cp: CardPoints; txs: Poi
   const [date, setDate] = useState(todayIso())
   const [saving, setSaving] = useState(false)
   const [editingSettings, setEditingSettings] = useState(false)
-  const [programName, setProgramName] = useState(cp.program_name)
-  const [valuePerPoint, setValuePerPoint] = useState(String(cp.value_per_point_cents))
+  const [programName, setProgramName] = useState(acct.program_name)
+  const [valuePerPoint, setValuePerPoint] = useState(String(acct.value_per_point_cents))
   const [showHistory, setShowHistory] = useState(false)
 
-  const estValue = (cp.balance * cp.value_per_point_cents) / 100
+  const estValue = (acct.balance * acct.value_per_point_cents) / 100
 
   const reset = () => { setMode('none'); setAmount(''); setNote(''); setDate(todayIso()) }
 
@@ -46,7 +58,7 @@ function CardPointsRow({ card, cp, txs }: { card: Card; cp: CardPoints; txs: Poi
     if (!n || n <= 0) return
     setSaving(true)
     try {
-      await fetch(`/api/points/${cp.id}/transaction`, {
+      await fetch(`/api/points/${acct.id}/transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -65,7 +77,7 @@ function CardPointsRow({ card, cp, txs }: { card: Card; cp: CardPoints; txs: Poi
   async function saveSettings() {
     setSaving(true)
     try {
-      await fetch(`/api/points/${cp.id}/settings`, {
+      await fetch(`/api/points/${acct.id}/settings`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -91,98 +103,107 @@ function CardPointsRow({ card, cp, txs }: { card: Card; cp: CardPoints; txs: Poi
     fontSize: 13, color: 'var(--ink)', background: '#fff', boxSizing: 'border-box',
   }
 
+  const btn = (bg: string, color: string): React.CSSProperties => ({
+    padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+    background: bg, color, border: 'none', cursor: 'pointer',
+  })
+
   return (
     <div style={{ background: '#fff', border: '1px solid var(--sand)', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
-      <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {card.display_name}
-          </p>
-          {!editingSettings ? (
-            <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 2 }}>
-              {cp.program_name || 'Unnamed program'} · {cp.value_per_point_cents}¢/pt{' '}
-              <button onClick={() => setEditingSettings(true)} style={{
-                background: 'none', border: 'none', color: 'var(--terra)', fontSize: 11,
-                cursor: 'pointer', padding: 0, marginLeft: 4,
-              }}>edit</button>
-            </p>
+      {/* Header */}
+      <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {editingSettings ? (
+            <input value={programName} onChange={e => setProgramName(e.target.value)}
+              style={{ ...inp, fontSize: 14, fontWeight: 600, marginBottom: 6 }} />
           ) : (
-            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' as const }}>
-              <input value={programName} onChange={e => setProgramName(e.target.value)}
-                placeholder="Program name" style={{ ...inp, width: 170 }} />
-              <input value={valuePerPoint} onChange={e => setValuePerPoint(e.target.value)}
-                type="number" step="0.1" placeholder="¢/pt" style={{ ...inp, width: 70 }} />
-              <button onClick={saveSettings} disabled={saving} style={{
-                padding: '6px 12px', borderRadius: 7, fontSize: 12, fontWeight: 500,
-                background: 'var(--ox)', color: '#fff', border: 'none', cursor: 'pointer',
-              }}>Save</button>
-              <button onClick={() => setEditingSettings(false)} style={{
-                padding: '6px 10px', borderRadius: 7, fontSize: 12,
-                background: 'transparent', border: '1px solid var(--sand)', color: 'var(--bark)', cursor: 'pointer',
-              }}>Cancel</button>
-            </div>
+            <p style={{ fontSize: 14, fontWeight: 600 }}>{programName || NETWORK_LABEL[acct.network] || acct.network}</p>
           )}
+          <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 2 }}>
+            {acct.owner === 'katie' ? 'Katie' : 'Stephen'}
+          </p>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <p className="fr" style={{ fontSize: 24 }}>{cp.balance.toLocaleString()}</p>
-          <p style={{ fontSize: 12, color: 'var(--bark)' }}>≈ {fmtUsd(estValue)}</p>
+          <p className="fr" style={{ fontSize: 22 }}>{acct.balance.toLocaleString()}</p>
+          {editingSettings ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+              <input value={valuePerPoint} onChange={e => setValuePerPoint(e.target.value)}
+                style={{ ...inp, width: 60, fontSize: 12, padding: '4px 6px', textAlign: 'right' }} />
+              <span style={{ fontSize: 11, color: 'var(--bark)' }}>¢/pt</span>
+            </div>
+          ) : (
+            <p style={{ fontSize: 12, color: 'var(--bark)' }}>
+              ~{fmtUsd(estValue)} · {acct.value_per_point_cents}¢/pt
+            </p>
+          )}
         </div>
       </div>
 
-      <div style={{ padding: '0 20px 14px', display: 'flex', gap: 8 }}>
-        <button onClick={() => setMode(m => m === 'add' ? 'none' : 'add')} style={{
-          padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-          background: mode === 'add' ? 'var(--ox)' : '#fff', color: mode === 'add' ? '#fff' : 'var(--ink)',
-          border: '1px solid var(--sand)',
-        }}>+ Add points</button>
-        <button onClick={() => setMode(m => m === 'redeem' ? 'none' : 'redeem')} style={{
-          padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-          background: mode === 'redeem' ? 'var(--ox)' : '#fff', color: mode === 'redeem' ? '#fff' : 'var(--ink)',
-          border: '1px solid var(--sand)',
-        }}>− Redeem points</button>
-        {txs.length > 0 && (
-          <button onClick={() => setShowHistory(s => !s)} style={{
-            padding: '6px 14px', borderRadius: 7, fontSize: 12, cursor: 'pointer',
-            background: 'transparent', color: 'var(--bark)', border: 'none', marginLeft: 'auto',
-          }}>{showHistory ? 'Hide' : 'History'} ({txs.length})</button>
+      {/* Action row */}
+      <div style={{ padding: '0 20px 14px', display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+        {editingSettings ? (
+          <>
+            <button onClick={saveSettings} disabled={saving} style={btn('var(--ox)', '#fff')}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={() => {
+              setEditingSettings(false)
+              setProgramName(acct.program_name)
+              setValuePerPoint(String(acct.value_per_point_cents))
+            }} style={btn('transparent', 'var(--bark)')}>Cancel</button>
+          </>
+        ) : mode === 'none' ? (
+          <>
+            <button onClick={() => setMode('add')} style={btn('#dcfce7', '#166534')}>+ Add points</button>
+            <button onClick={() => setMode('redeem')} style={btn('#fef3c7', '#92400e')}>− Redeem</button>
+            <button onClick={() => setEditingSettings(true)} style={btn('transparent', 'var(--bark)')}>Edit</button>
+            {txs.length > 0 && (
+              <button onClick={() => setShowHistory(h => !h)} style={btn('transparent', 'var(--bark)')}>
+                {showHistory ? 'Hide' : 'Show'} history ({txs.length})
+              </button>
+            )}
+          </>
+        ) : (
+          <div style={{ width: '100%' }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: mode === 'redeem' ? '#92400e' : '#166534', marginBottom: 8 }}>
+              {mode === 'redeem' ? 'Redeem points' : 'Add points'}
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <input type="number" placeholder="Amount" value={amount}
+                onChange={e => setAmount(e.target.value)} style={inp} />
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+            </div>
+            <input placeholder={mode === 'redeem' ? 'Note — e.g. Utah Trip' : 'Note — optional'}
+              value={note} onChange={e => setNote(e.target.value)} style={{ ...inp, width: '100%', marginBottom: 8 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={submitTx} disabled={saving || !amount} style={btn('var(--ox)', '#fff')}>
+                {saving ? 'Saving…' : 'Confirm'}
+              </button>
+              <button onClick={reset} style={btn('transparent', 'var(--bark)')}>Cancel</button>
+            </div>
+          </div>
         )}
       </div>
 
-      {mode !== 'none' && (
-        <div style={{ padding: '0 20px 16px', display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center', borderTop: '1px solid var(--sand)', paddingTop: 14 }}>
-          <input value={amount} onChange={e => setAmount(e.target.value)} type="number"
-            placeholder={mode === 'add' ? 'Points added' : 'Points redeemed'} style={{ ...inp, width: 130 }} />
-          <input value={note} onChange={e => setNote(e.target.value)}
-            placeholder={mode === 'add' ? 'Note (optional)' : 'e.g. Utah Trip'} style={{ ...inp, width: 160 }} />
-          <input value={date} onChange={e => setDate(e.target.value)} type="date" style={inp} />
-          <button onClick={submitTx} disabled={saving || !amount} style={{
-            padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-            background: 'var(--ox)', color: '#fff', border: 'none',
-            cursor: saving ? 'default' : 'pointer', opacity: saving || !amount ? .6 : 1,
-          }}>{saving ? 'Saving…' : mode === 'add' ? 'Add' : 'Redeem'}</button>
-        </div>
-      )}
-
+      {/* History */}
       {showHistory && txs.length > 0 && (
         <div style={{ borderTop: '1px solid var(--sand)' }}>
           {txs.map(tx => (
             <div key={tx.id} style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '10px 20px', borderTop: '1px solid var(--sand)', fontSize: 12,
+              padding: '10px 20px', display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center', borderTop: '1px solid var(--sand)',
             }}>
               <div>
-                <span style={{ fontWeight: 600, color: tx.delta > 0 ? '#166534' : '#991b1b' }}>
+                <p style={{ fontSize: 13, color: 'var(--ink)' }}>
                   {tx.delta > 0 ? '+' : ''}{tx.delta.toLocaleString()} pts
-                </span>
-                {tx.note && <span style={{ color: 'var(--bark)' }}> · {tx.note}</span>}
-                <span style={{ color: 'var(--bark)' }}>
-                  {' '}· {tx.delta < 0 ? 'Redeemed' : 'Added'} {dateFmt(tx.occurred_on)}
-                </span>
+                  {tx.note ? ` · ${tx.note}` : ''}
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 2 }}>{dateFmt(tx.occurred_on)}</p>
               </div>
               <button onClick={() => undoTx(tx.id)} style={{
-                background: 'none', border: 'none', color: 'var(--bark)', fontSize: 11,
-                cursor: 'pointer', textDecoration: 'underline',
-              }}>undo</button>
+                fontSize: 11, color: '#dc2626', background: 'transparent',
+                border: 'none', cursor: 'pointer', padding: 0,
+              }}>Undo</button>
             </div>
           ))}
         </div>
@@ -191,46 +212,52 @@ function CardPointsRow({ card, cp, txs }: { card: Card; cp: CardPoints; txs: Poi
   )
 }
 
-// ── Main Points page ─────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────
 
-export default function PointsPage({ cards, cardPoints, pointTransactions }: Props) {
-  const cpByCard = new Map(cardPoints.map(cp => [cp.card_id, cp]))
-  const txByCardPoints = new Map<string, PointTransaction[]>()
+export default function PointsPage({ pointsAccounts, pointTransactions }: Props) {
+  const txsByAccount = new Map<string, PointTransaction[]>()
   for (const tx of pointTransactions) {
-    const list = txByCardPoints.get(tx.card_points_id) ?? []
+    const list = txsByAccount.get(tx.points_account_id) ?? []
     list.push(tx)
-    txByCardPoints.set(tx.card_points_id, list)
+    txsByAccount.set(tx.points_account_id, list)
+  }
+  for (const list of txsByAccount.values()) {
+    list.sort((a, b) => b.occurred_on.localeCompare(a.occurred_on))
   }
 
-  const totalValue = cardPoints.reduce((s, cp) => s + (cp.balance * cp.value_per_point_cents) / 100, 0)
-  const totalPoints = cardPoints.reduce((s, cp) => s + cp.balance, 0)
+  const totalValue = pointsAccounts.reduce(
+    (s, a) => s + (a.balance * a.value_per_point_cents) / 100, 0
+  )
 
   const section = (owner: 'katie' | 'stephen', label: string) => {
-    const ownerCards = cards.filter(c => c.owner === owner)
+    const accts = pointsAccounts.filter(a => a.owner === owner)
+    if (accts.length === 0) return null
     return (
-      <>
-        <h2 className="fr" style={{ fontSize: 20, margin: '24px 0 16px' }}>{label}</h2>
-        {ownerCards.map(card => {
-          const cp = cpByCard.get(card.id)
-          if (!cp) return null
-          return <CardPointsRow key={card.id} card={card} cp={cp} txs={txByCardPoints.get(cp.id) ?? []} />
-        })}
-      </>
+      <div key={owner}>
+        <h2 className="fr" style={{ fontSize: 20, margin: owner === 'katie' ? '0 0 16px' : '24px 0 16px' }}>{label}</h2>
+        {accts.map(a => (
+          <AccountRow key={a.id} acct={a} txs={txsByAccount.get(a.id) ?? []} />
+        ))}
+      </div>
     )
   }
 
   return (
     <div>
-      <div style={{ background: 'var(--ox)', borderRadius: 14, padding: 24, color: '#fff', marginBottom: 8 }}>
+      <div style={{ background: 'var(--ox)', borderRadius: 14, padding: 24, color: '#fff', marginBottom: 32 }}>
         <p style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', opacity: .7 }}>
-          Total estimated value
+          Total points value
         </p>
         <p className="fr" style={{ fontSize: 48, lineHeight: 1, marginTop: 4 }}>{fmtUsd(totalValue)}</p>
-        <p style={{ fontSize: 14, opacity: .6, marginTop: 4 }}>{totalPoints.toLocaleString()} points across all cards</p>
+        <p style={{ fontSize: 14, opacity: .6, marginTop: 4 }}>
+          across {pointsAccounts.length} account{pointsAccounts.length !== 1 ? 's' : ''}
+        </p>
       </div>
-
       {section('katie', 'Katie')}
       {section('stephen', 'Stephen')}
+      {pointsAccounts.length === 0 && (
+        <p style={{ color: 'var(--bark)', fontSize: 14 }}>No points accounts yet.</p>
+      )}
     </div>
   )
 }

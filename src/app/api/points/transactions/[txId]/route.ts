@@ -4,7 +4,7 @@ import { db } from '@/lib/supabase'
 
 /**
  * Undo a points transaction: deletes the log row and reverses its
- * effect on the card's balance.
+ * effect on the account's balance.
  * DELETE /api/points/transactions/[txId]
  */
 export async function DELETE(
@@ -19,28 +19,28 @@ export async function DELETE(
 
   const { data: tx, error: txErr } = await db
     .from('point_transactions')
-    .select('id, card_points_id, delta')
+    .select('id, points_account_id, delta')
     .eq('id', txId)
     .single()
   if (txErr || !tx) {
     return NextResponse.json({ ok: false, error: 'Transaction not found' }, { status: 404 })
   }
 
-  const { data: cp } = await db
-    .from('card_points')
+  const { data: acct } = await db
+    .from('points_accounts')
     .select('id, balance')
-    .eq('id', tx.card_points_id)
+    .eq('id', tx.points_account_id)
     .single()
 
-  const newBalance = Math.max(0, (cp?.balance ?? 0) - tx.delta)
+  const newBalance = Math.max(0, (acct?.balance ?? 0) - tx.delta)
 
   const { error: delErr } = await db.from('point_transactions').delete().eq('id', txId)
   if (delErr) return NextResponse.json({ ok: false, error: delErr.message }, { status: 500 })
 
   await db
-    .from('card_points')
+    .from('points_accounts')
     .update({ balance: newBalance, updated_at: new Date().toISOString() })
-    .eq('id', tx.card_points_id)
+    .eq('id', tx.points_account_id)
 
   return NextResponse.json({ ok: true, balance: newBalance })
 }

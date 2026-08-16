@@ -12,7 +12,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Card, Certificate, CertRedemption, Trip, PinnedNote, CardPoints, PointTransaction } from '@/types/db'
+import type { Card, Certificate, CertRedemption, Trip, PinnedNote, PointsAccount, PointTransaction } from '@/types/db'
 import type { EnrichedCredit } from '@/types/enriched'
 import TodayPage from '@/components/TodayPage'
 import PointsPage from '@/components/PointsPage'
@@ -24,7 +24,7 @@ interface Props {
   certRedemptions:    CertRedemption[]
   trips:              Trip[]
   notes:              PinnedNote[]
-  cardPoints:         CardPoints[]
+  pointsAccounts:     PointsAccount[]
   pointTransactions:  PointTransaction[]
   today:              string
 }
@@ -1119,7 +1119,7 @@ function HotelLibraryPage() {
 
 // ── Main dashboard ─────────────────────────────────────────────
 
-export default function DashboardClient({ cards, credits: initialCredits, certificates, certRedemptions, trips, notes, cardPoints, pointTransactions, today }: Props) {
+export default function DashboardClient({ cards, credits: initialCredits, certificates, certRedemptions, trips, notes, pointsAccounts, pointTransactions, today }: Props) {
   const [tab, setTab] = useState<'today' | 'credits' | 'points' | 'certs' | 'trips' | 'notes' | 'hotels'>('today')
   const [credits, setCredits] = useState(initialCredits)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -1261,7 +1261,7 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
             <CreditsPage cards={cards} credits={credits} onToggle={handleToggle} today={today} />
           )}
           {tab === 'points' && (
-            <PointsPage cards={cards} cardPoints={cardPoints} pointTransactions={pointTransactions} />
+            <PointsPage pointsAccounts={pointsAccounts} pointTransactions={pointTransactions} />
           )}
           {tab === 'certs' && (
             <CertsPage certificates={certificates} cards={cards} certRedemptions={certRedemptions} today={today} />
