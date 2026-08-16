@@ -58,4 +58,4 @@ select distinct owner, network,
     else 1.0
   end
 from cards
-where active = true and network is not null and network <> '';
+where active = true and network is not null and network <> '' and network <> 'N/A';
