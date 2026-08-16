@@ -7,7 +7,7 @@ import { isAuthenticated } from '@/lib/auth'
 import { db } from '@/lib/supabase'
 import { computePeriodKey, computeCardmemberPeriodKey, PeriodType, PERIOD_MULTIPLIER } from '@/lib/period-key'
 import DashboardClient from '@/components/DashboardClient'
-import type { Card, Credit, UsageLog, Certificate, CertRedemption, Trip, PinnedNote, PointsAccount, PointTransaction } from '@/types/db'
+import type { Card, Credit, UsageLog, Certificate, CertRedemption, CertBalanceTransaction, Trip, PinnedNote, PointsAccount, PointTransaction } from '@/types/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +28,7 @@ export default async function DashboardPage() {
     { data: notes },
     { data: pointsAccounts },
     { data: pointTx },
+    { data: certBalanceTx },
   ] = await Promise.all([
     db.from('cards').select('*').eq('active', true).order('owner').order('created_at'),
     db.from('credits').select('*, cards(anniversary_month,anniversary_day)')
@@ -39,6 +40,7 @@ export default async function DashboardPage() {
     db.from('pinned_notes').select('*').order('pinned', { ascending: false }).order('sort_order'),
     db.from('points_accounts').select('*'),
     db.from('point_transactions').select('*').order('occurred_on', { ascending: false }),
+    db.from('cert_balance_transactions').select('*').order('occurred_on', { ascending: false }) as unknown as Promise<{ data: CertBalanceTransaction[] | null }>,
   ])
 
   // ── Attach period state to each credit ──────────────────────
@@ -110,6 +112,7 @@ export default async function DashboardPage() {
       notes={notes ?? []}
       pointsAccounts={pointsAccounts ?? []}
       pointTransactions={(pointTx ?? []) as PointTransaction[]}
+      certBalanceTransactions={(certBalanceTx ?? []) as CertBalanceTransaction[]}
       today={today.toISOString()}
     />
   )

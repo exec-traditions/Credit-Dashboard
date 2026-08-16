@@ -54,21 +54,23 @@ export interface UsageLog {
 }
 
 export interface Certificate {
-  id:                string
-  card_id:           string
-  name:              string
-  status:            CertStatus
-  value_low_cents:   number | null
-  value_high_cents:  number | null
-  issued_at:         string | null
-  expires_at:        string | null
-  trip_id:           string | null
-  notes:             string | null
-  cert_type:         'one_time' | 'recurring'
-  anniversary_month: number | null
-  anniversary_day:   number | null
-  first_issue_year:  number | null
-  created_at:        string
+  id:                  string
+  card_id:             string
+  name:                string
+  status:              CertStatus
+  value_low_cents:     number | null
+  value_high_cents:    number | null
+  issued_at:           string | null
+  expires_at:          string | null
+  trip_id:             string | null
+  notes:               string | null
+  cert_type:           'one_time' | 'recurring'
+  anniversary_month:   number | null
+  anniversary_day:     number | null
+  first_issue_year:    number | null
+  is_balance_tracked:  boolean
+  balance_cents:       number | null
+  created_at:          string
 }
 
 export interface CertRedemption {
@@ -76,6 +78,15 @@ export interface CertRedemption {
   certificate_id: string
   year:           number
   redeemed_at:    string
+}
+
+export interface CertBalanceTransaction {
+  id:             string
+  certificate_id: string
+  delta_cents:    number
+  note:           string | null
+  occurred_on:    string   // ISO date
+  created_at:     string
 }
 
 export interface Trip {
@@ -212,6 +223,7 @@ export interface Database {
       credits:         { Row: Credit;        Insert: Partial<Credit>;        Update: Partial<Credit>        }
       usage_log:       { Row: UsageLog;      Insert: Partial<UsageLog>;      Update: Partial<UsageLog>      }
       certificates:    { Row: Certificate;   Insert: Partial<Certificate>;   Update: Partial<Certificate>   }
+      cert_balance_transactions: { Row: CertBalanceTransaction; Insert: Partial<CertBalanceTransaction>; Update: Partial<CertBalanceTransaction> }
       trips:           { Row: Trip;          Insert: Partial<Trip>;          Update: Partial<Trip>          }
       trip_shortlist:  { Row: TripShortlist; Insert: Partial<TripShortlist>; Update: Partial<TripShortlist> }
       trip_allocations:{ Row: TripAllocation;Insert: Partial<TripAllocation>;Update: Partial<TripAllocation>}
