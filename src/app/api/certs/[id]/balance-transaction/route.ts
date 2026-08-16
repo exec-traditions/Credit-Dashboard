@@ -40,12 +40,12 @@ export async function POST(
   const newBalance = Math.max(0, (cert.balance_cents ?? 0) + delta)
   const occurred_on = body.occurred_on || new Date().toISOString().slice(0, 10)
 
-  const { error: txErr } = await db.from('cert_balance_transactions').insert({
+  const { data: txRow, error: txErr } = await db.from('cert_balance_transactions').insert({
     certificate_id: id,
     delta_cents: delta,
     note: body.note?.trim() || null,
     occurred_on,
-  })
+  }).select().single()
   if (txErr) return NextResponse.json({ ok: false, error: txErr.message }, { status: 500 })
 
   const { error: updErr } = await db
@@ -54,5 +54,5 @@ export async function POST(
     .eq('id', id)
   if (updErr) return NextResponse.json({ ok: false, error: updErr.message }, { status: 500 })
 
-  return NextResponse.json({ ok: true, balance_cents: newBalance })
+  return NextResponse.json({ ok: true, balance_cents: newBalance, transaction: txRow })
 }

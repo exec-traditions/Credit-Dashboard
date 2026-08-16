@@ -23,8 +23,8 @@ export async function PATCH(
   if (body.program_name !== undefined) update.program_name = body.program_name.trim()
   if (body.value_per_point_cents !== undefined) update.value_per_point_cents = body.value_per_point_cents
 
-  const { error } = await db.from('points_accounts').update(update).eq('id', id)
+  const { data: row, error } = await db.from('points_accounts').update(update).eq('id', id).select().single()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, account: row })
 }

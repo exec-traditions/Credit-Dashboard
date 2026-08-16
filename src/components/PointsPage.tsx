@@ -4,10 +4,13 @@
  * PointsPage — one row per person per issuer (e.g. "American Express
  * (Stephen)"), not per card. Shows balance, estimated $ value using a
  * realistic per-program valuation, add/redeem forms, and history.
+ *
+ * All mutations update local state directly (no router.refresh()) so
+ * the active tab and any other open edit forms on the page are never
+ * disturbed — you can have multiple accounts open and editing at once.
  */
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import type { PointsAccount, PointTransaction } from '@/types/db'
 
 const fmtUsd = (dollars: number) =>
@@ -33,12 +36,20 @@ const NETWORK_LABEL: Record<string, string> = {
 interface Props {
   pointsAccounts: PointsAccount[]
   pointTransactions: PointTransaction[]
+  onAccountUpdated: (account: PointsAccount) => void
+  onTransactionAdded: (tx: PointTransaction) => void
+  onTransactionRemoved: (txId: string) => void
 }
 
 // ── One issuer's points block (per person) ──────────────────
 
-function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[] }) {
-  const router = useRouter()
+function AccountRow({ acct, txs, onAccountUpdated, onTransactionAdded, onTransactionRemoved }: {
+  acct: PointsAccount
+  txs: PointTransaction[]
+  onAccountUpdated: (account: PointsAccount) => void
+  onTransactionAdded: (tx: PointTransaction) => void
+  onTransactionRemoved: (txId: string) => void
+}) {
   const [mode, setMode] = useState<'none' | 'add' | 'redeem'>('none')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
@@ -58,7 +69,7 @@ function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[
     if (!n || n <= 0) return
     setSaving(true)
     try {
-      await fetch(`/api/points/${acct.id}/transaction`, {
+      const res = await fetch(`/api/points/${acct.id}/transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -67,8 +78,12 @@ function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[
           occurred_on: date,
         }),
       })
-      router.refresh()
-      reset()
+      const j = await res.json()
+      if (j.ok) {
+        onAccountUpdated({ ...acct, balance: j.balance })
+        if (j.transaction) onTransactionAdded(j.transaction)
+        reset()
+      }
     } finally {
       setSaving(false)
     }
@@ -77,7 +92,7 @@ function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[
   async function saveSettings() {
     setSaving(true)
     try {
-      await fetch(`/api/points/${acct.id}/settings`, {
+      const res = await fetch(`/api/points/${acct.id}/settings`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,8 +100,11 @@ function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[
           value_per_point_cents: Number(valuePerPoint) || 0,
         }),
       })
-      router.refresh()
-      setEditingSettings(false)
+      const j = await res.json()
+      if (j.ok && j.account) {
+        onAccountUpdated(j.account)
+        setEditingSettings(false)
+      }
     } finally {
       setSaving(false)
     }
@@ -94,8 +112,12 @@ function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[
 
   async function undoTx(txId: string) {
     if (!confirm('Undo this transaction?')) return
-    await fetch(`/api/points/transactions/${txId}`, { method: 'DELETE' })
-    router.refresh()
+    const res = await fetch(`/api/points/transactions/${txId}`, { method: 'DELETE' })
+    const j = await res.json()
+    if (j.ok) {
+      onAccountUpdated({ ...acct, balance: j.balance })
+      onTransactionRemoved(txId)
+    }
   }
 
   const inp: React.CSSProperties = {
@@ -214,7 +236,9 @@ function AccountRow({ acct, txs }: { acct: PointsAccount; txs: PointTransaction[
 
 // ── Page ─────────────────────────────────────────────────────
 
-export default function PointsPage({ pointsAccounts, pointTransactions }: Props) {
+export default function PointsPage({
+  pointsAccounts, pointTransactions, onAccountUpdated, onTransactionAdded, onTransactionRemoved,
+}: Props) {
   const txsByAccount = new Map<string, PointTransaction[]>()
   for (const tx of pointTransactions) {
     const list = txsByAccount.get(tx.points_account_id) ?? []
@@ -236,7 +260,14 @@ export default function PointsPage({ pointsAccounts, pointTransactions }: Props)
       <div key={owner}>
         <h2 className="fr" style={{ fontSize: 20, margin: owner === 'katie' ? '0 0 16px' : '24px 0 16px' }}>{label}</h2>
         {accts.map(a => (
-          <AccountRow key={a.id} acct={a} txs={txsByAccount.get(a.id) ?? []} />
+          <AccountRow
+            key={a.id}
+            acct={a}
+            txs={txsByAccount.get(a.id) ?? []}
+            onAccountUpdated={onAccountUpdated}
+            onTransactionAdded={onTransactionAdded}
+            onTransactionRemoved={onTransactionRemoved}
+          />
         ))}
       </div>
     )

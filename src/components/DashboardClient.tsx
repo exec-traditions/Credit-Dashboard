@@ -309,12 +309,14 @@ function CreditsPage({ cards, credits, onToggle, today }: {
 
 // ── Balance-tracked certificate row (e.g. United Flight Credit / TravelBank) ──
 
-function BalanceCertRow({ cert, card, txs }: {
+function BalanceCertRow({ cert, card, txs, onCertUpdated, onTransactionAdded, onTransactionRemoved }: {
   cert: Certificate
   card: Card | undefined
   txs: CertBalanceTransaction[]
+  onCertUpdated: (cert: Certificate) => void
+  onTransactionAdded: (tx: CertBalanceTransaction) => void
+  onTransactionRemoved: (txId: string) => void
 }) {
-  const router = useRouter()
   const [mode, setMode] = useState<'none' | 'add' | 'spend'>('none')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
@@ -334,13 +336,17 @@ function BalanceCertRow({ cert, card, txs }: {
     const deltaCents = Math.round(dollars * 100) * (mode === 'spend' ? -1 : 1)
     setSaving(true)
     try {
-      await fetch(`/api/certs/${cert.id}/balance-transaction`, {
+      const res = await fetch(`/api/certs/${cert.id}/balance-transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ delta_cents: deltaCents, note: note || null, occurred_on: date }),
       })
-      router.refresh()
-      reset()
+      const j = await res.json()
+      if (j.ok) {
+        onCertUpdated({ ...cert, balance_cents: j.balance_cents })
+        if (j.transaction) onTransactionAdded(j.transaction)
+        reset()
+      }
     } finally {
       setSaving(false)
     }
@@ -348,8 +354,12 @@ function BalanceCertRow({ cert, card, txs }: {
 
   async function undoTx(txId: string) {
     if (!confirm('Undo this transaction?')) return
-    await fetch(`/api/certs/balance-transactions/${txId}`, { method: 'DELETE' })
-    router.refresh()
+    const res = await fetch(`/api/certs/balance-transactions/${txId}`, { method: 'DELETE' })
+    const j = await res.json()
+    if (j.ok) {
+      onCertUpdated({ ...cert, balance_cents: j.balance_cents })
+      onTransactionRemoved(txId)
+    }
   }
 
   const inp: React.CSSProperties = {
@@ -432,14 +442,16 @@ function BalanceCertRow({ cert, card, txs }: {
 
 // ── Certs page ────────────────────────────────────────────────
 
-function CertsPage({ certificates, cards, certRedemptions: initRedemptions, certBalanceTransactions, today: todayStr }: {
+function CertsPage({ certificates, cards, certRedemptions: initRedemptions, certBalanceTransactions, today: todayStr, onCertUpdated, onTransactionAdded, onTransactionRemoved }: {
   certificates:    Certificate[]
   cards:           Card[]
   certRedemptions: CertRedemption[]
   certBalanceTransactions: CertBalanceTransaction[]
   today:           string
+  onCertUpdated: (cert: Certificate) => void
+  onTransactionAdded: (tx: CertBalanceTransaction) => void
+  onTransactionRemoved: (txId: string) => void
 }) {
-  const router = useRouter()
   const [redemptions, setRedemptions] = useState(initRedemptions)
   const cardMap = new Map(cards.map(c => [c.id, c]))
   const today   = new Date(todayStr)
@@ -458,7 +470,7 @@ function CertsPage({ certificates, cards, certRedemptions: initRedemptions, cert
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
   async function handleRedeem(certId: string, year: number, currentlyRedeemed: boolean) {
-    // Optimistic update
+    // Optimistic update — no page refresh needed
     setRedemptions(prev =>
       currentlyRedeemed
         ? prev.filter(r => !(r.certificate_id === certId && r.year === year))
@@ -470,7 +482,6 @@ function CertsPage({ certificates, cards, certRedemptions: initRedemptions, cert
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ year }),
       })
-      router.refresh()
     } catch {
       setRedemptions(initRedemptions) // revert
     }
@@ -603,6 +614,9 @@ function CertsPage({ certificates, cards, certRedemptions: initRedemptions, cert
                   cert={cert}
                   card={card}
                   txs={txsByCert.get(cert.id) ?? []}
+                  onCertUpdated={onCertUpdated}
+                  onTransactionAdded={onTransactionAdded}
+                  onTransactionRemoved={onTransactionRemoved}
                 />
               )
             }
@@ -1266,11 +1280,37 @@ function HotelLibraryPage() {
 
 // ── Main dashboard ─────────────────────────────────────────────
 
-export default function DashboardClient({ cards, credits: initialCredits, certificates, certRedemptions, certBalanceTransactions, trips, notes, pointsAccounts, pointTransactions, today }: Props) {
+export default function DashboardClient({ cards, credits: initialCredits, certificates: initialCertificates, certRedemptions, certBalanceTransactions: initialCertBalanceTx, trips, notes, pointsAccounts: initialPointsAccounts, pointTransactions: initialPointTx, today }: Props) {
   const [tab, setTab] = useState<'today' | 'credits' | 'points' | 'certs' | 'trips' | 'notes' | 'hotels'>('today')
   const [credits, setCredits] = useState(initialCredits)
+  const [pointsAccounts, setPointsAccounts] = useState(initialPointsAccounts)
+  const [pointTransactions, setPointTransactions] = useState(initialPointTx)
+  const [certificates, setCertificates] = useState(initialCertificates)
+  const [certBalanceTransactions, setCertBalanceTransactions] = useState(initialCertBalanceTx)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const router = useRouter()
+
+  // ── Points tab: local optimistic updates, no page refresh ────
+  const handleAccountUpdated = useCallback((account: PointsAccount) => {
+    setPointsAccounts(prev => prev.map(a => a.id === account.id ? account : a))
+  }, [])
+  const handlePointTxAdded = useCallback((tx: PointTransaction) => {
+    setPointTransactions(prev => [tx, ...prev])
+  }, [])
+  const handlePointTxRemoved = useCallback((txId: string) => {
+    setPointTransactions(prev => prev.filter(t => t.id !== txId))
+  }, [])
+
+  // ── Certs tab (balance-tracked): local optimistic updates ────
+  const handleCertUpdated = useCallback((cert: Certificate) => {
+    setCertificates(prev => prev.map(c => c.id === cert.id ? cert : c))
+  }, [])
+  const handleCertTxAdded = useCallback((tx: CertBalanceTransaction) => {
+    setCertBalanceTransactions(prev => [tx, ...prev])
+  }, [])
+  const handleCertTxRemoved = useCallback((txId: string) => {
+    setCertBalanceTransactions(prev => prev.filter(t => t.id !== txId))
+  }, [])
 
   const handleToggle = useCallback(async (id: string, markUsed: boolean) => {
     const credit = credits.find(c => c.id === id)
@@ -1408,7 +1448,13 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
             <CreditsPage cards={cards} credits={credits} onToggle={handleToggle} today={today} />
           )}
           {tab === 'points' && (
-            <PointsPage pointsAccounts={pointsAccounts} pointTransactions={pointTransactions} />
+            <PointsPage
+              pointsAccounts={pointsAccounts}
+              pointTransactions={pointTransactions}
+              onAccountUpdated={handleAccountUpdated}
+              onTransactionAdded={handlePointTxAdded}
+              onTransactionRemoved={handlePointTxRemoved}
+            />
           )}
           {tab === 'certs' && (
             <CertsPage
@@ -1417,6 +1463,9 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
               certRedemptions={certRedemptions}
               certBalanceTransactions={certBalanceTransactions}
               today={today}
+              onCertUpdated={handleCertUpdated}
+              onTransactionAdded={handleCertTxAdded}
+              onTransactionRemoved={handleCertTxRemoved}
             />
           )}
           {tab === 'trips' && (
