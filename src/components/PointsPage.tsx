@@ -54,7 +54,8 @@ const TRANSFER_PARTNERS: Record<string, TransferPartner[]> = {
     { name: 'Virgin Atlantic Flying Club', ratio: '1:1', note: 'Upper Class sweet spots' },
   ],
   citi: [
-    { name: 'Turkish Airlines Miles&Smiles', ratio: '1:1', note: 'Best way to book American Airlines — no fuel surcharges' },
+    { name: 'American Airlines AAdvantage', ratio: '1:1', note: 'Citi is the only issuer with a direct AA transfer — 1:1 on Strata Elite/Premier/Prestige, 1:0.7 on no-fee cards' },
+    { name: 'Turkish Airlines Miles&Smiles', ratio: '1:1', note: 'Alt. route to American via oneworld — no fuel surcharges' },
     { name: 'Air France/KLM Flying Blue', ratio: '1:1' },
     { name: 'Virgin Atlantic Flying Club', ratio: '1:1' },
     { name: 'JetBlue TrueBlue', ratio: '1:1' },
