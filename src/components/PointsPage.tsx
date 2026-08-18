@@ -33,6 +33,38 @@ const NETWORK_LABEL: Record<string, string> = {
   southwest: 'Southwest',
 }
 
+// Reference-only: main transfer partners per ecosystem. Ratios are
+// points-out:points-in (1:1 unless noted). Not stored in the DB —
+// this is fixed program info, not something to edit per account.
+interface TransferPartner { name: string; ratio: string; note?: string }
+const TRANSFER_PARTNERS: Record<string, TransferPartner[]> = {
+  amex: [
+    { name: 'ANA Mileage Club', ratio: '1:1', note: 'Best sweet spot — Japan business class' },
+    { name: 'Air France/KLM Flying Blue', ratio: '1:1', note: 'Frequent promo-award discounts' },
+    { name: 'Aeroplan (Air Canada)', ratio: '1:1', note: 'Star Alliance business class' },
+    { name: 'British Airways Avios', ratio: '1:1', note: 'Short-haul partner awards' },
+    { name: 'Delta SkyMiles', ratio: '1:1' },
+    { name: 'Hilton Honors', ratio: '1:2', note: 'Rarely worth it' },
+  ],
+  chase: [
+    { name: 'World of Hyatt', ratio: '1:1', note: 'Best hotel transfer value of any bank' },
+    { name: 'United MileagePlus', ratio: '1:1', note: 'Star Alliance awards' },
+    { name: 'Southwest Rapid Rewards', ratio: '1:1' },
+    { name: 'Air France/KLM Flying Blue', ratio: '1:1' },
+    { name: 'Virgin Atlantic Flying Club', ratio: '1:1', note: 'Upper Class sweet spots' },
+  ],
+  citi: [
+    { name: 'Turkish Airlines Miles&Smiles', ratio: '1:1', note: 'Best way to book American Airlines — no fuel surcharges' },
+    { name: 'Air France/KLM Flying Blue', ratio: '1:1' },
+    { name: 'Virgin Atlantic Flying Club', ratio: '1:1' },
+    { name: 'JetBlue TrueBlue', ratio: '1:1' },
+    { name: 'Choice Privileges', ratio: '1:2', note: 'Hotel — rarely worth it' },
+  ],
+  marriott: [
+    { name: 'Airlines (40+ partners)', ratio: '3:1', note: 'United, Delta, American, Alaska, Southwest, etc. — plus 5,000-pt bonus per 60,000 transferred' },
+  ],
+}
+
 interface Props {
   pointsAccounts: PointsAccount[]
   pointTransactions: PointTransaction[]
@@ -59,6 +91,8 @@ function AccountRow({ acct, txs, onAccountUpdated, onTransactionAdded, onTransac
   const [programName, setProgramName] = useState(acct.program_name)
   const [valuePerPoint, setValuePerPoint] = useState(String(acct.value_per_point_cents))
   const [showHistory, setShowHistory] = useState(false)
+  const [showPartners, setShowPartners] = useState(false)
+  const partners = TRANSFER_PARTNERS[acct.network] ?? []
 
   const estValue = (acct.balance * acct.value_per_point_cents) / 100
 
@@ -184,6 +218,11 @@ function AccountRow({ acct, txs, onAccountUpdated, onTransactionAdded, onTransac
                 {showHistory ? 'Hide' : 'Show'} history ({txs.length})
               </button>
             )}
+            {partners.length > 0 && (
+              <button onClick={() => setShowPartners(p => !p)} style={btn('transparent', 'var(--bark)')}>
+                {showPartners ? 'Hide' : 'Show'} transfer partners
+              </button>
+            )}
           </>
         ) : (
           <div style={{ width: '100%' }}>
@@ -206,6 +245,21 @@ function AccountRow({ acct, txs, onAccountUpdated, onTransactionAdded, onTransac
           </div>
         )}
       </div>
+
+      {/* Transfer partners (reference only) */}
+      {showPartners && partners.length > 0 && (
+        <div style={{ borderTop: '1px solid var(--sand)', padding: '12px 20px' }}>
+          {partners.map(p => (
+            <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0' }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 12, color: 'var(--ink)' }}>{p.name}</p>
+                {p.note && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 1 }}>{p.note}</p>}
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--bark)', flexShrink: 0, fontWeight: 500 }}>{p.ratio}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* History */}
       {showHistory && txs.length > 0 && (

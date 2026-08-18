@@ -33,8 +33,11 @@ create index idx_point_tx_account  on point_transactions(points_account_id);
 create index idx_point_tx_occurred on point_transactions(occurred_on);
 
 -- One row per person per issuer they hold a card with.
--- value_per_point_cents seeded with realistic transferable-point
--- valuations (editable anytime in the Points tab).
+-- value_per_point_cents seeded with each program's own travel-portal
+-- redemption rate (not transfer-partner upside) -- editable anytime
+-- in the Points tab. Chase Sapphire Reserve's flat 1.5c portal rate
+-- was retired in the Points Boost overhaul; standard redemptions are
+-- 1c flat, boosted rates only apply to select premium bookings.
 insert into points_accounts (owner, network, program_name, value_per_point_cents)
 select distinct owner, network,
   case network
@@ -48,13 +51,13 @@ select distinct owner, network,
     else network
   end,
   case network
-    when 'amex'      then 2.0
-    when 'chase'     then 2.0
-    when 'citi'      then 1.8
+    when 'amex'      then 1.0
+    when 'chase'     then 1.0
+    when 'citi'      then 1.0
     when 'marriott'  then 0.7
     when 'ihg'       then 0.5
     when 'hilton'    then 0.5
-    when 'southwest' then 1.4
+    when 'southwest' then 1.3
     else 1.0
   end
 from cards
