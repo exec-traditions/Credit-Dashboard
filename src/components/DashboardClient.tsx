@@ -377,6 +377,11 @@ function BalanceCertRow({ cert, card, txs, onCertUpdated, onTransactionAdded, on
         <div>
           <p style={{ fontSize: 14, fontWeight: 600 }}>{cert.name}</p>
           <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 2 }}>{card?.display_name ?? '—'}</p>
+          {cert.expires_at && (
+            <p style={{ fontSize: 12, color: '#92400e', marginTop: 4 }}>
+              Expires {new Date(cert.expires_at + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+          )}
         </div>
         <p className="fr" style={{ fontSize: 22 }}>{fmt(balance)}</p>
       </div>
