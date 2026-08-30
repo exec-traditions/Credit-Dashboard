@@ -307,7 +307,7 @@ function CreditsPage({ cards, credits, onToggle, today }: {
   )
 }
 
-// ── Balance-tracked certificate row (e.g. United Flight Credit / TravelBank) ──
+// ── Balance-tracked certificate row (e.g. United Flight Credit / TravelBank) — shows expires_at ──
 
 function BalanceCertRow({ cert, card, txs, onCertUpdated, onTransactionAdded, onTransactionRemoved }: {
   cert: Certificate
