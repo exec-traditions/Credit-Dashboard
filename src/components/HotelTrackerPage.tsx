@@ -130,9 +130,6 @@ export default function HotelTrackerPage({
     return map
   }, [bookings])
 
-  const card: React.CSSProperties = {
-    background: '#fff', border: '1px solid var(--sand)', borderRadius: 12, padding: '16px 20px', marginBottom: 10,
-  }
   const inp: React.CSSProperties = {
     width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--sand)',
     fontSize: 13, color: 'var(--ink)', background: '#fff', boxSizing: 'border-box',
@@ -196,69 +193,22 @@ export default function HotelTrackerPage({
               return (
                 <div key={city} style={{ marginTop: 14 }}>
                   <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--bark)', marginBottom: 8 }}>{city}</p>
-                  {sorted.map(h => {
-                    const oop = oopFor(h)
-                    const bookedCard = h.booked ? cards.find(c => c.id === h.card_id) : null
-                    const isBusy = busy.has(h.id)
-                    return (
-                      <div key={h.id} style={{
-                        ...card,
-                        boxShadow: `inset 3px 0 0 ${PROGRAM_COLOR[h.program]}`,
-                        ...(h.booked ? { borderColor: '#a9824e', background: 'linear-gradient(180deg,#f4ead8,#fff 60%)' } : {}),
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <span style={{ fontWeight: 600, fontSize: 14 }}>{h.hotel_name}</span>
-                              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.04em', color: 'var(--bark)', background: '#f5f5f5', padding: '2px 6px', borderRadius: 5 }}>
-                                {PROGRAM_LABEL[h.program]}
-                              </span>
-                              {h.nights > 0 && <span style={{ fontSize: 11, color: 'var(--bark)' }}>· {h.nights}n</span>}
-                            </div>
-                            <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 4 }}>
-                              {h.stay_dates}{h.distance ? ` · ${h.distance}` : ''}{h.stars ? ` · ${h.stars}★` : ''}
-                            </p>
-                            {h.parking && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 3 }}>🅿️ {h.parking}</p>}
-                            {h.spend?.length > 0 && (
-                              <ul style={{ fontSize: 12, color: 'var(--ink)', margin: '8px 0 0', paddingLeft: 18 }}>
-                                {h.spend.map((s, i) => <li key={i} style={{ marginBottom: 2 }}>{s}</li>)}
-                              </ul>
-                            )}
-                            {h.offer && <p style={{ fontSize: 11, color: '#a9824e', marginTop: 6 }}>{h.offer}</p>}
-                          </div>
-                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                            <p style={{ fontSize: 12, color: 'var(--bark)' }}>Total <b style={{ color: 'var(--ink)' }}>{fmt(h.total_cents)}</b></p>
-                            {oop != null && (
-                              <span style={{ display: 'inline-block', marginTop: 4, fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 999, background: '#e8f3ee', color: '#0f6d5c' }}>
-                                {fmt(oop)} OOP
-                              </span>
-                            )}
-                            <div style={{ marginTop: 10, display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                              {h.booked ? (
-                                <>
-                                  <span style={{ fontSize: 11, fontWeight: 600, color: '#166534', alignSelf: 'center' }}>
-                                    ✓ {bookedCard ? `${bookedCard.display_name}${bookedCard.last4 ? ' ···' + bookedCard.last4 : ''}` : 'Booked'}
-                                  </span>
-                                  <button disabled={isBusy} onClick={() => unbook(h.id)} style={btnGhost}>Unbook</button>
-                                </>
-                              ) : bookingFor === h.id ? (
-                                <CardPicker
-                                  options={eligibleCards(h.program, h.card_id)}
-                                  onPick={cardId => bookWith(h.id, cardId)}
-                                  onCancel={() => setBookingFor(null)}
-                                  busy={isBusy}
-                                  inp={inp} btnGhost={btnGhost}
-                                />
-                              ) : (
-                                <button disabled={isBusy} onClick={() => setBookingFor(h.id)} style={btn}>Book this</button>
-                              )}
-                              <button disabled={isBusy} onClick={() => deleteBooking(h.id)} style={{ ...btnGhost, color: '#dc2626', borderColor: '#fca5a5' }}>✕</button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  {sorted.map(h => (
+                    <HotelCard
+                      key={h.id}
+                      h={h}
+                      bookedCard={h.booked ? cards.find(c => c.id === h.card_id) : undefined}
+                      isBusy={busy.has(h.id)}
+                      isPickingCard={bookingFor === h.id}
+                      onStartBook={() => setBookingFor(h.id)}
+                      onCancelBook={() => setBookingFor(null)}
+                      onConfirmBook={cardId => bookWith(h.id, cardId)}
+                      onUnbook={() => unbook(h.id)}
+                      onDelete={() => deleteBooking(h.id)}
+                      eligibleCards={eligibleCards(h.program, h.card_id)}
+                      inp={inp} btnGhost={btnGhost}
+                    />
+                  ))}
                 </div>
               )
             })}
@@ -276,6 +226,102 @@ export default function HotelTrackerPage({
 
       {weekends.length === 0 && <p style={{ color: 'var(--bark)', fontSize: 14 }}>No weekends yet — add one to start tracking hotel options.</p>}
     </div>
+  )
+}
+
+// ── Collapsible hotel card — closed by default, name + OOP only until clicked ──
+function HotelCard({
+  h, bookedCard, isBusy, isPickingCard, onStartBook, onCancelBook, onConfirmBook, onUnbook, onDelete, eligibleCards, inp, btnGhost,
+}: {
+  h: HotelBooking
+  bookedCard?: Card
+  isBusy: boolean
+  isPickingCard: boolean
+  onStartBook: () => void
+  onCancelBook: () => void
+  onConfirmBook: (cardId: string) => void
+  onUnbook: () => void
+  onDelete: () => void
+  eligibleCards: { credit: EnrichedCredit; card?: Card }[]
+  inp: React.CSSProperties
+  btnGhost: React.CSSProperties
+}) {
+  const oop = oopFor(h)
+  const color = PROGRAM_COLOR[h.program]
+
+  return (
+    <details style={{
+      border: '1px solid var(--sand)', borderRadius: 12, marginBottom: 8, overflow: 'hidden',
+      boxShadow: `inset 3px 0 0 ${color}`,
+      ...(h.booked ? { borderColor: '#a9824e', background: 'linear-gradient(180deg,#f4ead8,#fff 65%)' } : { background: '#fff' }),
+    }}>
+      <summary style={{
+        listStyle: 'none', cursor: 'pointer', userSelect: 'none',
+        padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.04em', color: 'var(--bark)', background: '#f5f5f5', padding: '2px 6px', borderRadius: 5, flexShrink: 0 }}>
+            {PROGRAM_LABEL[h.program]}
+          </span>
+          <span style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.hotel_name}</span>
+          {h.booked && <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: '#166534', background: '#dcfce7', padding: '2px 7px', borderRadius: 999, flexShrink: 0 }}>✓ Booked</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: 'var(--bark)', whiteSpace: 'nowrap' }}>{h.stay_dates || `${h.nights} night${h.nights === 1 ? '' : 's'}`}</span>
+          {oop != null ? (
+            <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 999, background: '#e8f3ee', color: '#0f6d5c', whiteSpace: 'nowrap' }}>
+              {fmt(oop)} OOP
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, padding: '3px 9px', borderRadius: 999, background: '#f5f5f5', color: 'var(--bark)', whiteSpace: 'nowrap' }}>
+              Confirm total
+            </span>
+          )}
+        </div>
+      </summary>
+
+      <div style={{ padding: '4px 16px 16px', borderTop: '1px solid var(--sand)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginTop: 12 }}>
+          <div>
+            <p style={{ fontSize: 12, color: 'var(--bark)' }}>
+              {h.stars ? `★ ${h.stars} · ` : ''}{h.distance}{h.distance ? ' · ' : ''}{h.nights} night{h.nights === 1 ? '' : 's'}{h.stay_dates ? ` · ${h.stay_dates}` : ''}
+              {h.breakfast ? ' · Breakfast for two' : ''}
+            </p>
+            {h.parking && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 5 }}>🅿️ {h.parking}</p>}
+            {h.spend?.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--bark)', marginBottom: 4 }}>
+                  Spend the {h.property_credit_cents ? fmt(h.property_credit_cents) : ''} property credit on
+                </div>
+                <ul style={{ fontSize: 12, color: 'var(--ink)', margin: 0, paddingLeft: 18 }}>
+                  {h.spend.map((s, i) => <li key={i} style={{ marginBottom: 2 }}>{s}</li>)}
+                </ul>
+              </div>
+            )}
+            {h.notes && <p style={{ fontSize: 12, color: 'var(--ink)', marginTop: 8 }}>{h.notes}</p>}
+            {h.offer && <p style={{ fontSize: 11, color: '#a9824e', marginTop: 6 }}>{h.offer}</p>}
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--bark)' }}>Total <b style={{ color: 'var(--ink)' }}>{fmt(h.total_cents)}</b></p>
+            <div style={{ marginTop: 10, display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              {h.booked ? (
+                <>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#166534', alignSelf: 'center' }}>
+                    {bookedCard ? `${bookedCard.display_name}${bookedCard.last4 ? ' ···' + bookedCard.last4 : ''}` : ''}
+                  </span>
+                  <button disabled={isBusy} onClick={onUnbook} style={btnGhost}>Unbook</button>
+                </>
+              ) : isPickingCard ? (
+                <CardPicker options={eligibleCards} onPick={onConfirmBook} onCancel={onCancelBook} busy={isBusy} inp={inp} btnGhost={btnGhost} />
+              ) : (
+                <button disabled={isBusy} onClick={onStartBook} style={{ ...btnGhost, background: 'var(--ox)', color: '#fff', border: 'none' }}>Book this</button>
+              )}
+              <button disabled={isBusy} onClick={onDelete} style={{ ...btnGhost, color: '#dc2626', borderColor: '#fca5a5' }}>✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
   )
 }
 
