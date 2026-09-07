@@ -7,7 +7,7 @@ import { isAuthenticated } from '@/lib/auth'
 import { db } from '@/lib/supabase'
 import { computePeriodKey, computeCardmemberPeriodKey, PeriodType, PERIOD_MULTIPLIER } from '@/lib/period-key'
 import DashboardClient from '@/components/DashboardClient'
-import type { Card, Credit, UsageLog, Certificate, CertRedemption, CertBalanceTransaction, Trip, PinnedNote, PointsAccount, PointTransaction } from '@/types/db'
+import type { Card, Credit, UsageLog, Certificate, CertRedemption, CertBalanceTransaction, PointsAccount, PointTransaction } from '@/types/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,8 +24,8 @@ export default async function DashboardPage() {
     { data: usageLogs },
     { data: certificates },
     { data: certRedemptions },
-    { data: trips },
-    { data: notes },
+    { data: hotelWeekends },
+    { data: hotelBookings },
     { data: pointsAccounts },
     { data: pointTx },
     { data: certBalanceTx },
@@ -36,8 +36,8 @@ export default async function DashboardPage() {
     db.from('usage_log').select('*'),
     db.from('certificates').select('*').neq('status', 'expired').order('created_at'),
     db.from('cert_redemptions').select('*') as unknown as Promise<{ data: CertRedemption[] | null }>,
-    db.from('trips').select('*').neq('status', 'cancelled').order('check_in'),
-    db.from('pinned_notes').select('*').order('pinned', { ascending: false }).order('sort_order'),
+    db.from('hotel_weekends').select('*').order('sort_order').order('created_at'),
+    db.from('hotel_bookings').select('*').order('created_at'),
     db.from('points_accounts').select('*'),
     db.from('point_transactions').select('*').order('occurred_on', { ascending: false }),
     db.from('cert_balance_transactions').select('*').order('occurred_on', { ascending: false }) as unknown as Promise<{ data: CertBalanceTransaction[] | null }>,
@@ -108,8 +108,8 @@ export default async function DashboardPage() {
       credits={credits}
       certificates={certificates ?? []}
       certRedemptions={certRedemptions ?? []}
-      trips={trips ?? []}
-      notes={notes ?? []}
+      hotelWeekends={hotelWeekends ?? []}
+      hotelBookings={hotelBookings ?? []}
       pointsAccounts={pointsAccounts ?? []}
       pointTransactions={(pointTx ?? []) as PointTransaction[]}
       certBalanceTransactions={(certBalanceTx ?? []) as CertBalanceTransaction[]}

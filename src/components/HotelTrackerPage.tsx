@@ -1,0 +1,403 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import type { Card, HotelBooking, HotelWeekend, HotelProgram } from '@/types/db'
+import type { EnrichedCredit } from '@/types/enriched'
+
+const PROGRAM_LABEL: Record<HotelProgram, string> = {
+  fhr: 'FHR', thc: 'THC', edit: 'The Edit', citi_travel: 'Citi Strata',
+}
+const PROGRAM_CREDIT_NAME: Record<HotelProgram, string> = {
+  fhr: 'Plat Hotel Credit (FHR/THC)', thc: 'Plat Hotel Credit (FHR/THC)',
+  edit: 'The Edit Hotel Credit', citi_travel: 'Annual Hotel Benefit',
+}
+const PROGRAM_INCREMENT_CENTS: Record<HotelProgram, number> = {
+  fhr: 30000, thc: 30000, edit: 25000, citi_travel: 30000,
+}
+const PROGRAM_MIN_NIGHTS: Record<HotelProgram, number> = { fhr: 1, thc: 2, edit: 2, citi_travel: 2 }
+const PROGRAM_COLOR: Record<HotelProgram, string> = {
+  fhr: '#7c5cbf', thc: '#0f6d5c', edit: '#2f5fa8', citi_travel: '#b5651d',
+}
+
+const fmt = (c: number | null | undefined) =>
+  c == null ? '—' : `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+function oopFor(b: HotelBooking): number | null {
+  if (b.total_cents == null) return null
+  const credit = b.booked ? b.credits_used_cents : PROGRAM_INCREMENT_CENTS[b.program]
+  return Math.max(0, b.total_cents - credit)
+}
+
+export default function HotelTrackerPage({
+  weekends, bookings, cards, credits,
+}: {
+  weekends: HotelWeekend[]
+  bookings: HotelBooking[]
+  cards: Card[]
+  credits: EnrichedCredit[]
+}) {
+  const router = useRouter()
+  const [busy, setBusy] = useState<Set<string>>(new Set())
+  const [bookingFor, setBookingFor] = useState<string | null>(null)
+  const [addingTo, setAddingTo] = useState<string | null>(null)
+  const [addingWeekend, setAddingWeekend] = useState(false)
+
+  const setBusyOn = (id: string, on: boolean) =>
+    setBusy(prev => { const s = new Set(prev); if (on) s.add(id); else s.delete(id); return s })
+
+  // ── Overview math ──────────────────────────────────────────────
+  const overview = useMemo(() => {
+    const groups: { key: HotelProgram | 'group'; label: string; color: string; credits: EnrichedCredit[] }[] = [
+      { key: 'fhr', label: 'Amex FHR/THC', color: PROGRAM_COLOR.fhr,
+        credits: credits.filter(c => c.name === PROGRAM_CREDIT_NAME.fhr) },
+      { key: 'edit', label: "Chase The Edit", color: PROGRAM_COLOR.edit,
+        credits: credits.filter(c => c.name === PROGRAM_CREDIT_NAME.edit) },
+      { key: 'citi_travel', label: 'Citi Strata', color: PROGRAM_COLOR.citi_travel,
+        credits: credits.filter(c => c.name === PROGRAM_CREDIT_NAME.citi_travel) },
+    ]
+    return groups.map(g => {
+      const totalCents = g.credits.reduce((a, c) => a + c.amount_cents, 0)
+      const remainingCents = g.credits.reduce((a, c) => a + c.remaining_cents, 0)
+      const byOwner = new Map<string, number>()
+      for (const c of g.credits) {
+        const card = cards.find(k => k.id === c.card_id)
+        const owner = card?.owner ?? '?'
+        if (c.remaining_cents > 0) byOwner.set(owner, (byOwner.get(owner) ?? 0) + 1)
+      }
+      return { ...g, totalCents, remainingCents, splitLabel: [...byOwner.entries()].map(([o, n]) => `${n} ${o}`).join(' · ') }
+    })
+  }, [credits, cards])
+
+  // ── Eligible cards for a program (has that credit, with remaining > 0 this period, or already assigned) ──
+  function eligibleCards(program: HotelProgram, currentCardId?: string | null) {
+    const wantName = PROGRAM_CREDIT_NAME[program]
+    return credits
+      .filter(c => c.name === wantName && (c.remaining_cents >= PROGRAM_INCREMENT_CENTS[program] || c.card_id === currentCardId))
+      .map(c => ({ credit: c, card: cards.find(k => k.id === c.card_id) }))
+      .filter(x => x.card)
+  }
+
+  async function bookWith(bookingId: string, cardId: string) {
+    setBusyOn(bookingId, true)
+    try {
+      const r = await fetch(`/api/hotel-bookings/${bookingId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ book: true, card_id: cardId }),
+      })
+      const j = await r.json()
+      if (!j.ok) { alert(j.error ?? 'Could not book this stay'); return }
+      setBookingFor(null)
+      router.refresh()
+    } finally {
+      setBusyOn(bookingId, false)
+    }
+  }
+
+  async function unbook(bookingId: string) {
+    if (!confirm('Unbook this stay? This frees the credit back up.')) return
+    setBusyOn(bookingId, true)
+    try {
+      await fetch(`/api/hotel-bookings/${bookingId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ book: false }),
+      })
+      router.refresh()
+    } finally {
+      setBusyOn(bookingId, false)
+    }
+  }
+
+  async function deleteBooking(bookingId: string) {
+    if (!confirm('Delete this option? This cannot be undone.')) return
+    setBusyOn(bookingId, true)
+    try {
+      await fetch(`/api/hotel-bookings/${bookingId}`, { method: 'DELETE' })
+      router.refresh()
+    } finally {
+      setBusyOn(bookingId, false)
+    }
+  }
+
+  // ── Grouping bookings by weekend → city ─────────────────────────
+  const byWeekend = useMemo(() => {
+    const map = new Map<string, HotelBooking[]>()
+    for (const b of bookings) {
+      const k = b.weekend_id ?? '(unassigned)'
+      if (!map.has(k)) map.set(k, [])
+      map.get(k)!.push(b)
+    }
+    return map
+  }, [bookings])
+
+  const card: React.CSSProperties = {
+    background: '#fff', border: '1px solid var(--sand)', borderRadius: 12, padding: '16px 20px', marginBottom: 10,
+  }
+  const inp: React.CSSProperties = {
+    width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--sand)',
+    fontSize: 13, color: 'var(--ink)', background: '#fff', boxSizing: 'border-box',
+  }
+  const btn: React.CSSProperties = {
+    padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+    background: 'var(--ox)', color: '#fff', border: 'none', cursor: 'pointer',
+  }
+  const btnGhost: React.CSSProperties = {
+    padding: '6px 14px', borderRadius: 7, fontSize: 12,
+    background: 'transparent', border: '1px solid var(--sand)', color: 'var(--bark)', cursor: 'pointer',
+  }
+
+  return (
+    <div>
+      {/* Overview tiles */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
+        {overview.map(g => (
+          <div key={g.label} style={{
+            flex: 1, minWidth: 200, padding: '16px 18px', borderRadius: 12,
+            border: '1px solid var(--sand)', background: '#fff',
+            boxShadow: `inset 3px 0 0 ${g.color}`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+              <span className="fr" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(g.remainingCents)}</span>
+              <span style={{ fontSize: 13, color: 'var(--bark)' }}>/ {fmt(g.totalCents)}</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 3 }}>{g.label} open</p>
+            {g.splitLabel && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 4 }}>{g.splitLabel}</p>}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h2 className="fr" style={{ fontSize: 20 }}>Hotel Tracker</h2>
+        <button onClick={() => setAddingWeekend(v => !v)} style={btn}>+ New Weekend</button>
+      </div>
+
+      {addingWeekend && <NewWeekendForm onDone={() => { setAddingWeekend(false); router.refresh() }} onCancel={() => setAddingWeekend(false)} inp={inp} btn={btn} btnGhost={btnGhost} />}
+
+      {/* Weekends */}
+      {weekends.map(w => {
+        const wBookings = byWeekend.get(w.id) ?? []
+        const byCity = new Map<string, HotelBooking[]>()
+        for (const b of wBookings) {
+          if (!byCity.has(b.city)) byCity.set(b.city, [])
+          byCity.get(b.city)!.push(b)
+        }
+        return (
+          <div key={w.id} style={{ marginBottom: 28 }}>
+            <h3 className="fr" style={{ fontSize: 18, fontWeight: 600 }}>{w.label}</h3>
+            {w.sub && <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 2 }}>{w.sub}</p>}
+            {w.best && (
+              <p style={{ fontSize: 13, color: 'var(--ink)', marginTop: 8, padding: '10px 14px', background: '#f0f4ff', borderRadius: 8 }}>
+                {w.best}
+              </p>
+            )}
+
+            {[...byCity.entries()].map(([city, hotels]) => {
+              const sorted = [...hotels].sort((a, b) => (oopFor(a) ?? 1e9) - (oopFor(b) ?? 1e9))
+              return (
+                <div key={city} style={{ marginTop: 14 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--bark)', marginBottom: 8 }}>{city}</p>
+                  {sorted.map(h => {
+                    const oop = oopFor(h)
+                    const bookedCard = h.booked ? cards.find(c => c.id === h.card_id) : null
+                    const isBusy = busy.has(h.id)
+                    return (
+                      <div key={h.id} style={{
+                        ...card,
+                        boxShadow: `inset 3px 0 0 ${PROGRAM_COLOR[h.program]}`,
+                        ...(h.booked ? { borderColor: '#a9824e', background: 'linear-gradient(180deg,#f4ead8,#fff 60%)' } : {}),
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 600, fontSize: 14 }}>{h.hotel_name}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.04em', color: 'var(--bark)', background: '#f5f5f5', padding: '2px 6px', borderRadius: 5 }}>
+                                {PROGRAM_LABEL[h.program]}
+                              </span>
+                              {h.nights > 0 && <span style={{ fontSize: 11, color: 'var(--bark)' }}>· {h.nights}n</span>}
+                            </div>
+                            <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 4 }}>
+                              {h.stay_dates}{h.distance ? ` · ${h.distance}` : ''}{h.stars ? ` · ${h.stars}★` : ''}
+                            </p>
+                            {h.parking && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 3 }}>🅿️ {h.parking}</p>}
+                            {h.spend?.length > 0 && (
+                              <ul style={{ fontSize: 12, color: 'var(--ink)', margin: '8px 0 0', paddingLeft: 18 }}>
+                                {h.spend.map((s, i) => <li key={i} style={{ marginBottom: 2 }}>{s}</li>)}
+                              </ul>
+                            )}
+                            {h.offer && <p style={{ fontSize: 11, color: '#a9824e', marginTop: 6 }}>{h.offer}</p>}
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <p style={{ fontSize: 12, color: 'var(--bark)' }}>Total <b style={{ color: 'var(--ink)' }}>{fmt(h.total_cents)}</b></p>
+                            {oop != null && (
+                              <span style={{ display: 'inline-block', marginTop: 4, fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 999, background: '#e8f3ee', color: '#0f6d5c' }}>
+                                {fmt(oop)} OOP
+                              </span>
+                            )}
+                            <div style={{ marginTop: 10, display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                              {h.booked ? (
+                                <>
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: '#166534', alignSelf: 'center' }}>
+                                    ✓ {bookedCard ? `${bookedCard.display_name}${bookedCard.last4 ? ' ···' + bookedCard.last4 : ''}` : 'Booked'}
+                                  </span>
+                                  <button disabled={isBusy} onClick={() => unbook(h.id)} style={btnGhost}>Unbook</button>
+                                </>
+                              ) : bookingFor === h.id ? (
+                                <CardPicker
+                                  options={eligibleCards(h.program, h.card_id)}
+                                  onPick={cardId => bookWith(h.id, cardId)}
+                                  onCancel={() => setBookingFor(null)}
+                                  busy={isBusy}
+                                  inp={inp} btnGhost={btnGhost}
+                                />
+                              ) : (
+                                <button disabled={isBusy} onClick={() => setBookingFor(h.id)} style={btn}>Book this</button>
+                              )}
+                              <button disabled={isBusy} onClick={() => deleteBooking(h.id)} style={{ ...btnGhost, color: '#dc2626', borderColor: '#fca5a5' }}>✕</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+
+            <div style={{ marginTop: 10 }}>
+              {addingTo === w.id ? (
+                <AddStayForm weekendId={w.id} onDone={() => { setAddingTo(null); router.refresh() }} onCancel={() => setAddingTo(null)} inp={inp} btn={btn} btnGhost={btnGhost} />
+              ) : (
+                <button onClick={() => setAddingTo(w.id)} style={btnGhost}>+ Add option to {w.label}</button>
+              )}
+            </div>
+          </div>
+        )
+      })}
+
+      {weekends.length === 0 && <p style={{ color: 'var(--bark)', fontSize: 14 }}>No weekends yet — add one to start tracking hotel options.</p>}
+    </div>
+  )
+}
+
+function CardPicker({ options, onPick, onCancel, busy, inp, btnGhost }: {
+  options: { credit: EnrichedCredit; card?: Card }[]
+  onPick: (cardId: string) => void
+  onCancel: () => void
+  busy: boolean
+  inp: React.CSSProperties
+  btnGhost: React.CSSProperties
+}) {
+  const [sel, setSel] = useState('')
+  if (options.length === 0) {
+    return <p style={{ fontSize: 12, color: '#dc2626' }}>No card has this credit open right now.</p>
+  }
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <select value={sel} onChange={e => setSel(e.target.value)} style={{ ...inp, width: 220 }}>
+        <option value="">Choose a card…</option>
+        {options.map(o => (
+          <option key={o.credit.card_id} value={o.credit.card_id}>
+            {o.card?.display_name} {o.card?.last4 ? '···' + o.card.last4 : ''} ({o.card?.owner}) — {fmt(o.credit.remaining_cents)} left
+          </option>
+        ))}
+      </select>
+      <button disabled={!sel || busy} onClick={() => sel && onPick(sel)} style={{ ...btnGhost, background: 'var(--ox)', color: '#fff', opacity: (!sel || busy) ? .5 : 1 }}>
+        Confirm
+      </button>
+      <button onClick={onCancel} style={btnGhost}>Cancel</button>
+    </div>
+  )
+}
+
+function NewWeekendForm({ onDone, onCancel, inp, btn, btnGhost }: {
+  onDone: () => void; onCancel: () => void
+  inp: React.CSSProperties; btn: React.CSSProperties; btnGhost: React.CSSProperties
+}) {
+  const [id, setId] = useState('')
+  const [label, setLabel] = useState('')
+  const [sub, setSub] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const r = await fetch('/api/hotel-weekends', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'), label, sub: sub || null }),
+      })
+      const j = await r.json()
+      if (!j.ok) { alert(j.error ?? 'Could not create weekend'); return }
+      onDone()
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: '1px solid var(--sand)', borderRadius: 12, padding: 16, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <input required placeholder="Short id (e.g. jan9)" value={id} onChange={e => setId(e.target.value)} style={inp} />
+        <input required placeholder="Label (e.g. Jan 9–11)" value={label} onChange={e => setLabel(e.target.value)} style={inp} />
+        <input placeholder="Sub (optional)" value={sub} onChange={e => setSub(e.target.value)} style={inp} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button type="submit" disabled={saving} style={btn}>{saving ? 'Saving…' : 'Create'}</button>
+        <button type="button" onClick={onCancel} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+function AddStayForm({ weekendId, onDone, onCancel, inp, btn, btnGhost }: {
+  weekendId: string; onDone: () => void; onCancel: () => void
+  inp: React.CSSProperties; btn: React.CSSProperties; btnGhost: React.CSSProperties
+}) {
+  const [form, setForm] = useState({
+    city: '', hotel_name: '', program: 'fhr' as HotelProgram, stay_dates: '',
+    nights: PROGRAM_MIN_NIGHTS.fhr, total: '', notes: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const set = (k: string, v: string | number) => setForm(prev => ({ ...prev, [k]: v }))
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const r = await fetch('/api/hotel-bookings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weekend_id: weekendId, city: form.city, hotel_name: form.hotel_name, program: form.program,
+          stay_dates: form.stay_dates || null, nights: Number(form.nights) || 1,
+          total_cents: form.total ? Math.round(parseFloat(form.total) * 100) : null,
+          notes: form.notes || null,
+        }),
+      })
+      const j = await r.json()
+      if (!j.ok) { alert(j.error ?? 'Could not add stay'); return }
+      onDone()
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ background: '#fff', border: '1px solid var(--sand)', borderRadius: 12, padding: 16, marginTop: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <input required placeholder="City" value={form.city} onChange={e => set('city', e.target.value)} style={inp} />
+        <input required placeholder="Hotel name" value={form.hotel_name} onChange={e => set('hotel_name', e.target.value)} style={inp} />
+        <select value={form.program} onChange={e => set('program', e.target.value)} style={inp}>
+          <option value="fhr">FHR (Amex, 1nt+)</option>
+          <option value="thc">THC (Amex, 2nt+)</option>
+          <option value="edit">The Edit (Chase, 2nt+)</option>
+          <option value="citi_travel">Citi Strata (2nt+)</option>
+        </select>
+        <input placeholder="Stay dates (e.g. Dec 18–19)" value={form.stay_dates} onChange={e => set('stay_dates', e.target.value)} style={inp} />
+        <input type="number" min={1} placeholder="Nights" value={form.nights} onChange={e => set('nights', e.target.value)} style={inp} />
+        <input type="number" step="0.01" placeholder="All-in total ($, optional)" value={form.total} onChange={e => set('total', e.target.value)} style={inp} />
+      </div>
+      <textarea placeholder="Notes — parking, spend, anything else" value={form.notes} rows={2}
+        onChange={e => set('notes', e.target.value)} style={{ ...inp, marginTop: 10, resize: 'vertical' as const }} />
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button type="submit" disabled={saving} style={btn}>{saving ? 'Saving…' : 'Add option'}</button>
+        <button type="button" onClick={onCancel} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}

@@ -214,6 +214,52 @@ export interface PinnedNote {
   updated_at: string
 }
 
+
+export type HotelProgram = 'fhr' | 'thc' | 'edit' | 'citi_travel'
+export type HotelBookingStatus = 'option' | 'booked' | 'excluded'
+
+export interface HotelWeekend {
+  id:         string
+  label:      string
+  sub:        string | null
+  best:       string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface HotelBooking {
+  id:                     string
+  weekend_id:             string | null
+  city:                   string
+  hotel_name:             string
+  program:                HotelProgram
+  stay_dates:             string | null
+  check_in:               string | null
+  check_out:              string | null
+  nights:                 number
+  stars:                  number | null
+  distance:               string | null
+  total_cents:            number | null
+  property_credit_cents:  number | null
+  breakfast:              boolean | null
+  parking:                string | null
+  resort_fee:             string | null
+  spend:                  string[]
+  offer:                  string | null
+  notes:                  string | null
+  card_id:                string | null
+  credit_id:              string | null
+  period_key:             string | null
+  credits_used_cents:     number
+  owners:                 string[]
+  status:                 HotelBookingStatus
+  booked:                 boolean
+  source:                 string | null
+  created_at:             string
+  updated_at:             string
+}
+
 // ── Supabase Database interface (for typed client) ────────────
 
 export interface Database {
@@ -231,6 +277,8 @@ export interface Database {
       rate_cache:      { Row: RateCache;     Insert: Partial<RateCache>;     Update: Partial<RateCache>     }
       dining_library:  { Row: DiningLibrary; Insert: Partial<DiningLibrary>; Update: Partial<DiningLibrary> }
       pinned_notes:    { Row: PinnedNote;    Insert: Partial<PinnedNote>;    Update: Partial<PinnedNote>    }
+      hotel_weekends:  { Row: HotelWeekend;  Insert: Partial<HotelWeekend>;  Update: Partial<HotelWeekend>  }
+      hotel_bookings:  { Row: HotelBooking;  Insert: Partial<HotelBooking>;  Update: Partial<HotelBooking>  }
       points_accounts:   { Row: PointsAccount;     Insert: Partial<PointsAccount>;   Update: Partial<PointsAccount>    }
       point_transactions:{ Row: PointTransaction; Insert: Partial<PointTransaction>; Update: Partial<PointTransaction> }
     }
