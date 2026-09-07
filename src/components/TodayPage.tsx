@@ -41,6 +41,9 @@ const HIDDEN_ON_TODAY = new Set<string>([
   'Global Entry / TSA PreCheck — $120 every 4 years',
   'CLEAR+',
   'Blacklane Credit',
+  'Lyft Pink Credit',
+  'Peloton Credit',
+  'DoorDash DashPass Credit',
 ])
 
 export default function TodayPage({ cards, credits, onToggle, today: todayStr }: {
