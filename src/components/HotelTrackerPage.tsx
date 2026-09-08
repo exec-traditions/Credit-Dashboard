@@ -8,6 +8,9 @@ import type { EnrichedCredit } from '@/types/enriched'
 const PROGRAM_LABEL: Record<HotelProgram, string> = {
   fhr: 'FHR', thc: 'THC', edit: 'The Edit', citi_travel: 'Citi Strata',
 }
+const PROGRAM_ISSUER: Record<HotelProgram, string> = {
+  fhr: 'Amex', thc: 'Amex', edit: 'Chase', citi_travel: 'Citi',
+}
 const PROGRAM_CREDIT_NAME: Record<HotelProgram, string> = {
   fhr: 'Plat Hotel Credit (FHR/THC)', thc: 'Plat Hotel Credit (FHR/THC)',
   edit: 'The Edit Hotel Credit', citi_travel: 'Annual Hotel Benefit',
@@ -19,9 +22,14 @@ const PROGRAM_MIN_NIGHTS: Record<HotelProgram, number> = { fhr: 1, thc: 2, edit:
 const PROGRAM_COLOR: Record<HotelProgram, string> = {
   fhr: '#7c5cbf', thc: '#0f6d5c', edit: '#2f5fa8', citi_travel: '#b5651d',
 }
+const PROGRAM_SOURCE: Record<HotelProgram, string> = {
+  fhr: 'Amex · amextravel.com', thc: 'Amex · amextravel.com',
+  edit: 'Chase · Chase Travel', citi_travel: 'Citi · cititravel.com',
+}
 
 const fmt = (c: number | null | undefined) =>
   c == null ? '—' : `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const fmtWhole = (c: number) => `$${Math.round(c / 100).toLocaleString()}`
 
 function oopFor(b: HotelBooking): number | null {
   if (b.total_cents == null) return null
@@ -42,6 +50,8 @@ export default function HotelTrackerPage({
   const [bookingFor, setBookingFor] = useState<string | null>(null)
   const [addingTo, setAddingTo] = useState<string | null>(null)
   const [addingWeekend, setAddingWeekend] = useState(false)
+  const [page, setPage] = useState<string>('overview')
+  const [showHow, setShowHow] = useState(false)
 
   const setBusyOn = (id: string, on: boolean) =>
     setBusy(prev => { const s = new Set(prev); if (on) s.add(id); else s.delete(id); return s })
@@ -51,21 +61,25 @@ export default function HotelTrackerPage({
     const groups: { key: HotelProgram | 'group'; label: string; color: string; credits: EnrichedCredit[] }[] = [
       { key: 'fhr', label: 'Amex FHR/THC', color: PROGRAM_COLOR.fhr,
         credits: credits.filter(c => c.name === PROGRAM_CREDIT_NAME.fhr) },
-      { key: 'edit', label: "Chase The Edit", color: PROGRAM_COLOR.edit,
+      { key: 'edit', label: 'Chase "The Edit"', color: PROGRAM_COLOR.edit,
         credits: credits.filter(c => c.name === PROGRAM_CREDIT_NAME.edit) },
       { key: 'citi_travel', label: 'Citi Strata', color: PROGRAM_COLOR.citi_travel,
         credits: credits.filter(c => c.name === PROGRAM_CREDIT_NAME.citi_travel) },
     ]
     return groups.map(g => {
-      const totalCents = g.credits.reduce((a, c) => a + c.amount_cents, 0)
-      const remainingCents = g.credits.reduce((a, c) => a + c.remaining_cents, 0)
+      const totalCards = g.credits.length
+      const openCards = g.credits.filter(c => c.remaining_cents > 0).length
       const byOwner = new Map<string, number>()
+      const byOwnerTotal = new Map<string, number>()
       for (const c of g.credits) {
         const card = cards.find(k => k.id === c.card_id)
         const owner = card?.owner ?? '?'
+        byOwnerTotal.set(owner, (byOwnerTotal.get(owner) ?? 0) + 1)
         if (c.remaining_cents > 0) byOwner.set(owner, (byOwner.get(owner) ?? 0) + 1)
       }
-      return { ...g, totalCents, remainingCents, splitLabel: [...byOwner.entries()].map(([o, n]) => `${n} ${o}`).join(' · ') }
+      const owners = [...byOwnerTotal.keys()].sort()
+      const splitLabel = owners.map(o => `${byOwner.get(o) ?? 0} ${o[0].toUpperCase() + o.slice(1)}`).join(' · ')
+      return { ...g, totalCards, openCards, splitLabel, pct: totalCards ? (openCards / totalCards) * 100 : 0 }
     })
   }, [credits, cards])
 
@@ -130,6 +144,14 @@ export default function HotelTrackerPage({
     return map
   }, [bookings])
 
+  const weekendHasBooked = (id: string) => (byWeekend.get(id) ?? []).some(b => b.booked)
+
+  const lastUpdated = useMemo(() => {
+    const stamps = [...weekends.map(w => w.updated_at), ...bookings.map(b => b.updated_at)].filter(Boolean)
+    if (stamps.length === 0) return null
+    return new Date(stamps.sort().at(-1) as string)
+  }, [weekends, bookings])
+
   const inp: React.CSSProperties = {
     width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--sand)',
     fontSize: 13, color: 'var(--ink)', background: '#fff', boxSizing: 'border-box',
@@ -143,8 +165,53 @@ export default function HotelTrackerPage({
     background: 'transparent', border: '1px solid var(--sand)', color: 'var(--bark)', cursor: 'pointer',
   }
 
+  const activeWeekend = page === 'overview' ? null : weekends.find(w => w.id === page) ?? null
+
   return (
     <div>
+      {/* ── Header, matching the original tracker's framing ───────── */}
+      <div style={{ marginBottom: 20 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#0b4f42', margin: '0 0 6px' }}>
+          Household Hotel Credits
+        </p>
+        <button onClick={() => setShowHow(v => !v)} style={{
+          display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer',
+          padding: 0, fontSize: 13, fontWeight: 600, color: '#0f6d5c',
+        }}>
+          <span style={{ fontSize: 10, transform: showHow ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▸</span>
+          How the programs and cap work
+        </button>
+
+        {showHow && (
+          <div style={{ marginTop: 10 }}>
+            <p style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13, color: 'var(--bark)', margin: '0 0 10px' }}>
+              {(['thc', 'fhr', 'edit', 'citi_travel'] as HotelProgram[]).map(p => (
+                <span key={p} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <i style={{ width: 9, height: 9, borderRadius: '50%', display: 'inline-block', background: PROGRAM_COLOR[p] }} />
+                  <b style={{ color: 'var(--ink)' }}>{PROGRAM_LABEL[p]}</b> — {PROGRAM_MIN_NIGHTS[p]} night{PROGRAM_MIN_NIGHTS[p] === 1 ? '' : 's'}, {PROGRAM_ISSUER[p]}
+                </span>
+              ))}
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--bark)', maxWidth: 720, lineHeight: 1.6, margin: 0 }}>
+              Amex Platinum ($300/card via amextravel.com): <b style={{ color: 'var(--ink)' }}>The Hotel Collection (THC)</b> needs
+              a 2-night minimum, <b style={{ color: 'var(--ink)' }}>Fine Hotels + Resorts (FHR)</b> has no minimum — a single night
+              gets the full benefit package (room upgrade, $100+ property credit, noon check-in, breakfast for two, 4pm checkout).
+              Chase Sapphire Reserve &quot;<b style={{ color: 'var(--ink)' }}>The Edit</b>&quot; ($250/booking via Chase Travel) needs a
+              2-night minimum, up to 2 bookings/card/year. <b style={{ color: 'var(--ink)' }}>Citi Strata Elite</b> hotel credit
+              ($300/card/year via cititravel.com) needs 2+ consecutive nights. Amex, Chase, and Citi credits are program-specific
+              and can&apos;t be combined or substituted for each other — though two different bookings the same weekend can each
+              draw from a different program.
+            </p>
+          </div>
+        )}
+
+        {lastUpdated && (
+          <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 10 }}>
+            Updated {lastUpdated.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · live from the dashboard — book a stay and this updates instantly.
+          </p>
+        )}
+      </div>
+
       {/* Overview tiles */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
         {overview.map(g => (
@@ -154,77 +221,202 @@ export default function HotelTrackerPage({
             boxShadow: `inset 3px 0 0 ${g.color}`,
           }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-              <span className="fr" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(g.remainingCents)}</span>
-              <span style={{ fontSize: 13, color: 'var(--bark)' }}>/ {fmt(g.totalCents)}</span>
+              <span className="fr" style={{ fontSize: 22, fontWeight: 600 }}>{g.openCards}</span>
+              <span style={{ fontSize: 13, color: 'var(--bark)' }}>/ {g.totalCards}</span>
             </div>
             <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 3 }}>{g.label} open</p>
-            {g.splitLabel && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 4 }}>{g.splitLabel}</p>}
+            <div style={{ marginTop: 8, height: 5, borderRadius: 100, background: 'var(--sand)', overflow: 'hidden' }}>
+              <div style={{ width: `${g.pct}%`, height: '100%', background: g.color, borderRadius: 100 }} />
+            </div>
+            {g.splitLabel && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 6 }}>{g.splitLabel} open</p>}
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h2 className="fr" style={{ fontSize: 20 }}>Hotel Tracker</h2>
-        <button onClick={() => setAddingWeekend(v => !v)} style={btn}>+ New Weekend</button>
+      {/* ── Pill nav: Overview + one page per weekend ─────────────── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 0 16px', borderBottom: '1px solid var(--sand)', marginBottom: 20 }}>
+        <PageTab active={page === 'overview'} onClick={() => setPage('overview')} label="Overview" />
+        {weekends.map(w => (
+          <PageTab key={w.id} active={page === w.id} onClick={() => setPage(w.id)} label={w.label} booked={weekendHasBooked(w.id)} />
+        ))}
       </div>
 
-      {addingWeekend && <NewWeekendForm onDone={() => { setAddingWeekend(false); router.refresh() }} onCancel={() => setAddingWeekend(false)} inp={inp} btn={btn} btnGhost={btnGhost} />}
+      {page === 'overview' ? (
+        <OverviewList
+          weekends={weekends}
+          byWeekend={byWeekend}
+          onOpen={setPage}
+          addingWeekend={addingWeekend}
+          onToggleAdding={() => setAddingWeekend(v => !v)}
+          onWeekendAdded={() => { setAddingWeekend(false); router.refresh() }}
+          onCancelAdding={() => setAddingWeekend(false)}
+          inp={inp} btn={btn} btnGhost={btnGhost}
+        />
+      ) : activeWeekend ? (
+        <WeekendPage
+          w={activeWeekend}
+          bookings={byWeekend.get(activeWeekend.id) ?? []}
+          cards={cards}
+          busy={busy}
+          bookingFor={bookingFor}
+          setBookingFor={setBookingFor}
+          onBookWith={bookWith}
+          onUnbook={unbook}
+          onDelete={deleteBooking}
+          eligibleCards={eligibleCards}
+          addingTo={addingTo}
+          setAddingTo={setAddingTo}
+          onStayAdded={() => { setAddingTo(null); router.refresh() }}
+          inp={inp} btn={btn} btnGhost={btnGhost}
+        />
+      ) : null}
+    </div>
+  )
+}
 
-      {/* Weekends */}
+function PageTab({ active, onClick, label, booked }: { active: boolean; onClick: () => void; label: string; booked?: boolean }) {
+  return (
+    <button onClick={onClick} style={{
+      fontSize: 13, fontWeight: 500, padding: '8px 15px', borderRadius: 100,
+      border: `1px solid ${active ? 'var(--ink)' : 'var(--sand)'}`,
+      background: active ? 'var(--ink)' : '#fff',
+      color: active ? '#fff' : 'var(--bark)',
+      cursor: 'pointer', whiteSpace: 'nowrap',
+    }}>
+      {label}{booked && <span style={{ marginLeft: 6, fontWeight: 700, color: active ? '#4fd2ae' : '#0f6d5c' }}>✓</span>}
+    </button>
+  )
+}
+
+// ── Overview page: one line per weekend, click to jump ────────────
+function OverviewList({
+  weekends, byWeekend, onOpen, addingWeekend, onToggleAdding, onWeekendAdded, onCancelAdding, inp, btn, btnGhost,
+}: {
+  weekends: HotelWeekend[]
+  byWeekend: Map<string, HotelBooking[]>
+  onOpen: (id: string) => void
+  addingWeekend: boolean
+  onToggleAdding: () => void
+  onWeekendAdded: () => void
+  onCancelAdding: () => void
+  inp: React.CSSProperties; btn: React.CSSProperties; btnGhost: React.CSSProperties
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <h2 className="fr" style={{ fontSize: 18 }}>Weekends</h2>
+        <button onClick={onToggleAdding} style={btn}>+ New Weekend</button>
+      </div>
+
+      {addingWeekend && <NewWeekendForm onDone={onWeekendAdded} onCancel={onCancelAdding} inp={inp} btn={btn} btnGhost={btnGhost} />}
+
       {weekends.map(w => {
-        const wBookings = byWeekend.get(w.id) ?? []
-        const byCity = new Map<string, HotelBooking[]>()
-        for (const b of wBookings) {
-          if (!byCity.has(b.city)) byCity.set(b.city, [])
-          byCity.get(b.city)!.push(b)
-        }
+        const list = byWeekend.get(w.id) ?? []
+        const booked = list.filter(b => b.booked)
+        const cheapest = [...list].filter(b => b.total_cents != null).sort((a, b) => (oopFor(a) ?? 1e9) - (oopFor(b) ?? 1e9))[0]
+        const oop = cheapest ? oopFor(cheapest) : null
         return (
-          <div key={w.id} style={{ marginBottom: 28 }}>
-            <h3 className="fr" style={{ fontSize: 18, fontWeight: 600 }}>{w.label}</h3>
-            {w.sub && <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 2 }}>{w.sub}</p>}
-            {w.best && (
-              <p style={{ fontSize: 13, color: 'var(--ink)', marginTop: 8, padding: '10px 14px', background: '#f0f4ff', borderRadius: 8 }}>
-                {w.best}
-              </p>
-            )}
-
-            {[...byCity.entries()].map(([city, hotels]) => {
-              const sorted = [...hotels].sort((a, b) => (oopFor(a) ?? 1e9) - (oopFor(b) ?? 1e9))
-              return (
-                <div key={city} style={{ marginTop: 14 }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--bark)', marginBottom: 8 }}>{city}</p>
-                  {sorted.map(h => (
-                    <HotelCard
-                      key={h.id}
-                      h={h}
-                      bookedCard={h.booked ? cards.find(c => c.id === h.card_id) : undefined}
-                      isBusy={busy.has(h.id)}
-                      isPickingCard={bookingFor === h.id}
-                      onStartBook={() => setBookingFor(h.id)}
-                      onCancelBook={() => setBookingFor(null)}
-                      onConfirmBook={cardId => bookWith(h.id, cardId)}
-                      onUnbook={() => unbook(h.id)}
-                      onDelete={() => deleteBooking(h.id)}
-                      eligibleCards={eligibleCards(h.program, h.card_id)}
-                      inp={inp} btnGhost={btnGhost}
-                    />
-                  ))}
-                </div>
-              )
-            })}
-
-            <div style={{ marginTop: 10 }}>
-              {addingTo === w.id ? (
-                <AddStayForm weekendId={w.id} onDone={() => { setAddingTo(null); router.refresh() }} onCancel={() => setAddingTo(null)} inp={inp} btn={btn} btnGhost={btnGhost} />
-              ) : (
-                <button onClick={() => setAddingTo(w.id)} style={btnGhost}>+ Add option to {w.label}</button>
-              )}
+          <button
+            key={w.id}
+            onClick={() => onOpen(w.id)}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
+              background: booked.length > 0 ? 'linear-gradient(180deg,#f4ead8,#fff 65%)' : '#fff',
+              border: `1px solid ${booked.length > 0 ? '#a9824e' : 'var(--sand)'}`,
+              borderRadius: 12, padding: '14px 18px', marginBottom: 10,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>
+                {w.label} {booked.length > 0 && <span style={{ color: '#166534', fontWeight: 700 }}>✓</span>}
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--bark)' }}>{list.length} option{list.length === 1 ? '' : 's'}</span>
             </div>
-          </div>
+            {w.best && <p style={{ fontSize: 13, color: 'var(--ink)', marginTop: 6 }}>{w.best}</p>}
+            {!w.best && oop != null && <p style={{ fontSize: 13, color: 'var(--bark)', marginTop: 6 }}>Best so far: {fmt(oop)} OOP</p>}
+          </button>
         )
       })}
 
       {weekends.length === 0 && <p style={{ color: 'var(--bark)', fontSize: 14 }}>No weekends yet — add one to start tracking hotel options.</p>}
+    </div>
+  )
+}
+
+// ── One weekend's page: cities → collapsible hotel cards ───────────
+function WeekendPage({
+  w, bookings, cards, busy, bookingFor, setBookingFor, onBookWith, onUnbook, onDelete, eligibleCards,
+  addingTo, setAddingTo, onStayAdded, inp, btn, btnGhost,
+}: {
+  w: HotelWeekend
+  bookings: HotelBooking[]
+  cards: Card[]
+  busy: Set<string>
+  bookingFor: string | null
+  setBookingFor: (id: string | null) => void
+  onBookWith: (id: string, cardId: string) => void
+  onUnbook: (id: string) => void
+  onDelete: (id: string) => void
+  eligibleCards: (program: HotelProgram, currentCardId?: string | null) => { credit: EnrichedCredit; card?: Card }[]
+  addingTo: string | null
+  setAddingTo: (id: string | null) => void
+  onStayAdded: () => void
+  inp: React.CSSProperties; btn: React.CSSProperties; btnGhost: React.CSSProperties
+}) {
+  const byCity = new Map<string, HotelBooking[]>()
+  for (const b of bookings) {
+    if (!byCity.has(b.city)) byCity.set(b.city, [])
+    byCity.get(b.city)!.push(b)
+  }
+
+  return (
+    <div>
+      <h2 className="fr" style={{ fontSize: 22, fontWeight: 600 }}>{w.label}</h2>
+      {w.sub && <p style={{ fontSize: 13, color: 'var(--bark)', marginTop: 3 }}>{w.sub}</p>}
+      {w.best && (
+        <p style={{ fontSize: 14, color: '#0b4f42', marginTop: 12, marginBottom: 24, padding: '12px 16px', background: '#e8f3ee', borderRadius: 10 }}>
+          {w.best}
+        </p>
+      )}
+
+      {bookings.length === 0 && (
+        <p style={{ padding: 24, border: '1px dashed var(--sand)', borderRadius: 12, color: 'var(--bark)', fontSize: 14, textAlign: 'center' }}>
+          Nothing tracked here yet.
+        </p>
+      )}
+
+      {[...byCity.entries()].map(([city, hotels]) => {
+        const sorted = [...hotels].sort((a, b) => (oopFor(a) ?? 1e9) - (oopFor(b) ?? 1e9))
+        return (
+          <div key={city} style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--sand)' }}>{city}</p>
+            {sorted.map(h => (
+              <HotelCard
+                key={h.id}
+                h={h}
+                bookedCard={h.booked ? cards.find(c => c.id === h.card_id) : undefined}
+                isBusy={busy.has(h.id)}
+                isPickingCard={bookingFor === h.id}
+                onStartBook={() => setBookingFor(h.id)}
+                onCancelBook={() => setBookingFor(null)}
+                onConfirmBook={cardId => onBookWith(h.id, cardId)}
+                onUnbook={() => onUnbook(h.id)}
+                onDelete={() => onDelete(h.id)}
+                eligibleCards={eligibleCards(h.program, h.card_id)}
+                inp={inp} btnGhost={btnGhost}
+              />
+            ))}
+          </div>
+        )
+      })}
+
+      <div style={{ marginTop: 10 }}>
+        {addingTo === w.id ? (
+          <AddStayForm weekendId={w.id} onDone={onStayAdded} onCancel={() => setAddingTo(null)} inp={inp} btn={btn} btnGhost={btnGhost} />
+        ) : (
+          <button onClick={() => setAddingTo(w.id)} style={btnGhost}>+ Add option to {w.label}</button>
+        )}
+      </div>
     </div>
   )
 }
@@ -287,11 +479,13 @@ function HotelCard({
               {h.stars ? `★ ${h.stars} · ` : ''}{h.distance}{h.distance ? ' · ' : ''}{h.nights} night{h.nights === 1 ? '' : 's'}{h.stay_dates ? ` · ${h.stay_dates}` : ''}
               {h.breakfast ? ' · Breakfast for two' : ''}
             </p>
-            {h.parking && <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 5 }}>🅿️ {h.parking}</p>}
+            <p style={{ fontSize: 11, color: 'var(--bark)', marginTop: 4 }}>
+              {PROGRAM_SOURCE[h.program]}{h.parking ? ` · 🅿️ ${h.parking}` : ''}
+            </p>
             {h.spend?.length > 0 && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--bark)', marginBottom: 4 }}>
-                  Spend the {h.property_credit_cents ? fmt(h.property_credit_cents) : ''} property credit on
+                  Spend the {h.property_credit_cents ? fmtWhole(h.property_credit_cents) : ''} property credit on
                 </div>
                 <ul style={{ fontSize: 12, color: 'var(--ink)', margin: 0, paddingLeft: 18 }}>
                   {h.spend.map((s, i) => <li key={i} style={{ marginBottom: 2 }}>{s}</li>)}
