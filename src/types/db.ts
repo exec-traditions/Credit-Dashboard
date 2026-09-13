@@ -215,7 +215,7 @@ export interface PinnedNote {
 }
 
 
-export type HotelProgram = 'fhr' | 'thc' | 'edit' | 'citi_travel'
+export type HotelProgram = 'fhr' | 'thc' | 'edit' | 'citi_travel' | 'none'
 export type HotelBookingStatus = 'option' | 'booked' | 'excluded'
 
 export interface HotelWeekend {

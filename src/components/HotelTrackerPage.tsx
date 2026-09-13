@@ -6,25 +6,25 @@ import type { Card, HotelBooking, HotelWeekend, HotelProgram } from '@/types/db'
 import type { EnrichedCredit } from '@/types/enriched'
 
 const PROGRAM_LABEL: Record<HotelProgram, string> = {
-  fhr: 'FHR', thc: 'THC', edit: 'The Edit', citi_travel: 'Citi Strata',
+  fhr: 'FHR', thc: 'THC', edit: 'The Edit', citi_travel: 'Citi Strata', none: 'Direct',
 }
 const PROGRAM_ISSUER: Record<HotelProgram, string> = {
-  fhr: 'Amex', thc: 'Amex', edit: 'Chase', citi_travel: 'Citi',
+  fhr: 'Amex', thc: 'Amex', edit: 'Chase', citi_travel: 'Citi', none: '—',
 }
 const PROGRAM_CREDIT_NAME: Record<HotelProgram, string> = {
   fhr: 'Plat Hotel Credit (FHR/THC)', thc: 'Plat Hotel Credit (FHR/THC)',
-  edit: 'The Edit Hotel Credit', citi_travel: 'Annual Hotel Benefit',
+  edit: 'The Edit Hotel Credit', citi_travel: 'Annual Hotel Benefit', none: '',
 }
 const PROGRAM_INCREMENT_CENTS: Record<HotelProgram, number> = {
-  fhr: 30000, thc: 30000, edit: 25000, citi_travel: 30000,
+  fhr: 30000, thc: 30000, edit: 25000, citi_travel: 30000, none: 0,
 }
-const PROGRAM_MIN_NIGHTS: Record<HotelProgram, number> = { fhr: 1, thc: 2, edit: 2, citi_travel: 2 }
+const PROGRAM_MIN_NIGHTS: Record<HotelProgram, number> = { fhr: 1, thc: 2, edit: 2, citi_travel: 2, none: 1 }
 const PROGRAM_COLOR: Record<HotelProgram, string> = {
-  fhr: '#7c5cbf', thc: '#0f6d5c', edit: '#2f5fa8', citi_travel: '#b5651d',
+  fhr: '#7c5cbf', thc: '#0f6d5c', edit: '#2f5fa8', citi_travel: '#b5651d', none: '#736c60',
 }
 const PROGRAM_SOURCE: Record<HotelProgram, string> = {
   fhr: 'Amex · amextravel.com', thc: 'Amex · amextravel.com',
-  edit: 'Chase · Chase Travel', citi_travel: 'Citi · cititravel.com',
+  edit: 'Chase · Chase Travel', citi_travel: 'Citi · cititravel.com', none: 'Booked directly — no card credit',
 }
 
 const fmt = (c: number | null | undefined) =>
@@ -627,6 +627,7 @@ function AddStayForm({ weekendId, onDone, onCancel, inp, btn, btnGhost }: {
           <option value="thc">THC (Amex, 2nt+)</option>
           <option value="edit">The Edit (Chase, 2nt+)</option>
           <option value="citi_travel">Citi Strata (2nt+)</option>
+          <option value="none">Direct booking (no card credit)</option>
         </select>
         <input placeholder="Stay dates (e.g. Dec 18–19)" value={form.stay_dates} onChange={e => set('stay_dates', e.target.value)} style={inp} />
         <input type="number" min={1} placeholder="Nights" value={form.nights} onChange={e => set('nights', e.target.value)} style={inp} />
