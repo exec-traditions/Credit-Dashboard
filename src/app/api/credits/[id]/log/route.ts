@@ -12,7 +12,7 @@ export async function POST(
   }
 
   const { id } = params
-  let body: { amount_cents?: number; notes?: string } = {}
+  let body: { amount_cents?: number; notes?: string; exact?: boolean } = {}
   try { body = await req.json() } catch { /* empty body is fine */ }
 
   // Load credit + card anniversary
@@ -55,7 +55,10 @@ export async function POST(
     periodKey = computePeriodKey(pType, today)
   }
 
-  const amount_used_cents = body.amount_cents ?? credit.amount_cents
+  if (body.amount_cents !== undefined && (!Number.isFinite(body.amount_cents) || body.amount_cents < 0)) {
+    return NextResponse.json({ ok: false, error: 'amount_cents must be >= 0' }, { status: 400 })
+  }
+  const amount_used_cents = Math.round(body.amount_cents ?? credit.amount_cents)
 
   // Fetch existing row to preserve notes and take max amount
   const { data: existing } = await db
@@ -65,9 +68,14 @@ export async function POST(
     .eq('period_key', periodKey)
     .maybeSingle() as unknown as { data: { id: string; amount_used_cents: number; notes: string | null } | null }
 
-  const finalAmount = existing
-    ? Math.max(existing.amount_used_cents, amount_used_cents)
-    : amount_used_cents
+  // exact: true  → "some used" edit: set the amount outright (can go down),
+  //                capped at the credit's face value.
+  // otherwise    → mark-used: never lowers an amount already logged.
+  const finalAmount = body.exact
+    ? Math.min(credit.amount_cents, amount_used_cents)
+    : existing
+      ? Math.max(existing.amount_used_cents, amount_used_cents)
+      : amount_used_cents
 
   // Preserve existing notes if the caller didn't supply new ones
   const finalNotes = body.notes !== undefined ? body.notes : (existing?.notes ?? null)

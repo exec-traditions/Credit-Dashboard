@@ -14,6 +14,7 @@ import type { Card } from '@/types/db'
 import type { EnrichedCredit } from '@/types/enriched'
 import { periodEnd, daysLeft, urgency, Urgency } from '@/lib/deadlines'
 import type { PeriodType } from '@/lib/period-key'
+import PartialUseEditor from '@/components/PartialUseEditor'
 
 const fmt = (cents: number) => '$' + Math.round(cents / 100).toLocaleString()
 const fmtAmount = (cents: number) => {
@@ -46,16 +47,18 @@ const HIDDEN_ON_TODAY = new Set<string>([
   'DoorDash DashPass Credit',
 ])
 
-export default function TodayPage({ cards, credits, onToggle, today: todayStr }: {
+export default function TodayPage({ cards, credits, onToggle, onSetUsed, today: todayStr }: {
   cards: Card[]
   credits: EnrichedCredit[]
   onToggle: (id: string, used: boolean) => void
+  onSetUsed: (id: string, usedCents: number) => void
   today: string
 }) {
   const today = useMemo(() => new Date(todayStr), [todayStr])
   const cardMap = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards])
   const [justUsed, setJustUsed] = useState<Set<string>>(new Set())
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [editingId, setEditingId] = useState<string | null>(null)
   const toggleGroup = (name: string) =>
     setExpandedGroups(prev => {
       const next = new Set(prev)
@@ -153,7 +156,10 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
   const ItemRow = ({ credit, card, end, days, urg, nested }: QueueItem & { nested?: boolean }) => {
     const st = URGENCY_STYLE[urg]
     const used = credit.is_used
+    const partial = !used && credit.used_cents > 0
+    const editing = editingId === credit.id && !used
     return (
+      <>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12,
         padding: nested ? '10px 16px 10px 40px' : '12px 16px',
@@ -178,6 +184,11 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
           </p>
           <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 1 }}>
             {card.owner === 'katie' ? 'Katie' : 'Stephen'} · {card.display_name} · resets {dateFmt(end)}
+            {partial && (
+              <span style={{ color: '#b45309', fontWeight: 600 }}>
+                {' '}· {fmtAmount(credit.used_cents)} of {fmtAmount(credit.amount_cents)} used
+              </span>
+            )}
           </p>
         </div>
         <span style={{ fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
@@ -189,12 +200,30 @@ export default function TodayPage({ cards, credits, onToggle, today: todayStr }:
             background: 'transparent', border: '1px solid var(--sand)', color: 'var(--bark)', flexShrink: 0,
           }}>Undo</button>
         ) : (
-          <button onClick={() => handleUse(credit.id)} style={{
-            fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
-            background: 'var(--ox)', border: 'none', color: '#fff', flexShrink: 0,
-          }}>Mark used</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+            <button onClick={() => handleUse(credit.id)} style={{
+              fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+              background: 'var(--ox)', border: 'none', color: '#fff',
+            }}>Mark used</button>
+            <button onClick={() => setEditingId(editing ? null : credit.id)} style={{
+              fontSize: 11, padding: '4px 8px', borderRadius: 8, cursor: 'pointer',
+              background: partial ? '#fef3c7' : 'transparent',
+              border: `1px solid ${partial ? '#fde68a' : 'var(--sand)'}`,
+              color: partial ? '#92400e' : 'var(--bark)', fontWeight: partial ? 600 : 400,
+            }}>{partial ? 'Edit used' : 'Some used'}</button>
+          </div>
         )}
       </div>
+      {editing && (
+        <PartialUseEditor
+          amountCents={credit.amount_cents}
+          usedCents={credit.used_cents}
+          indent={nested ? 40 : 16}
+          onSave={cents => { setEditingId(null); onSetUsed(credit.id, cents) }}
+          onCancel={() => setEditingId(null)}
+        />
+      )}
+      </>
     )
   }
 

@@ -18,6 +18,7 @@ import TodayPage from '@/components/TodayPage'
 import PointsPage from '@/components/PointsPage'
 import BalanceCertRow from '@/components/BalanceCertRow'
 import HotelTrackerPage from '@/components/HotelTrackerPage'
+import PartialUseEditor from '@/components/PartialUseEditor'
 
 interface Props {
   cards:              Card[]
@@ -74,73 +75,102 @@ function NavItem({ label, icon, active, onClick }: {
 
 // ── Credit row ─────────────────────────────────────────────────
 
-function CreditRow({ credit, onToggle }: {
+function CreditRow({ credit, onToggle, onSetUsed }: {
   credit: EnrichedCredit
   onToggle: (id: string, used: boolean) => void
+  onSetUsed: (id: string, usedCents: number) => void
 }) {
-  const used = credit.is_used
-  const pl   = periodLabel(credit.period_type)
-  const ap   = credit.autopilot
+  const [editing, setEditing] = useState(false)
+  const used    = credit.is_used
+  const partial = !used && credit.used_cents > 0
+  const pl      = periodLabel(credit.period_type)
+  const ap      = credit.autopilot
+
+  const pill = {
+    fontSize: 11, color: 'var(--bark)', padding: '3px 8px', borderRadius: 999,
+    border: '1px solid var(--sand)', whiteSpace: 'nowrap' as const,
+  }
 
   return (
-    <div
-      onClick={ap ? undefined : () => onToggle(credit.id, !used)}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 20px', cursor: ap ? 'default' : 'pointer',
-        borderTop: '1px solid var(--sand)',
-        background: used ? 'rgba(22,101,52,.04)' : '#fff',
-        transition: 'background .1s',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{
-          fontSize: 14, fontWeight: 500,
-          color: used ? 'var(--bark)' : 'var(--ink)',
-          textDecoration: used ? 'line-through' : 'none',
-        }}>
-          {credit.name}
-        </p>
-        <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 2 }}>
-          {fmtAmount(credit.amount_cents)}{pl}{ap ? ' · autopilot' : ''}
-        </p>
-      </div>
-      <div style={{ flexShrink: 0, textAlign: 'right' }}>
-        {ap ? (
-          used ? (
+    <div style={{
+      borderTop: '1px solid var(--sand)',
+      background: used ? 'rgba(22,101,52,.04)' : partial ? 'rgba(180,83,9,.04)' : '#fff',
+      transition: 'background .1s',
+    }}>
+      <div
+        onClick={ap ? undefined : () => onToggle(credit.id, !used)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+          padding: '14px 20px', cursor: ap ? 'default' : 'pointer',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontSize: 14, fontWeight: 500,
+            color: used ? 'var(--bark)' : 'var(--ink)',
+            textDecoration: used ? 'line-through' : 'none',
+          }}>
+            {credit.name}
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--bark)', marginTop: 2 }}>
+            {fmtAmount(credit.amount_cents)}{pl}{ap ? ' · autopilot' : ''}
+            {partial && (
+              <span style={{ color: '#b45309', fontWeight: 600 }}>
+                {' '}· {fmtAmount(credit.used_cents)} used · {fmtAmount(credit.remaining_cents)} left
+              </span>
+            )}
+          </p>
+        </div>
+        <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {ap ? (
+            used ? (
+              <span style={{
+                fontSize: 11, fontWeight: 700, background: '#e0f2fe', color: '#0369a1',
+                padding: '3px 8px', borderRadius: 999,
+              }}>⚡ Auto · ✓ Used</span>
+            ) : (
+              <span style={{
+                fontSize: 11, fontWeight: 600, background: '#fef3c7', color: '#92400e',
+                padding: '3px 8px', borderRadius: 999,
+              }}>⚡ Paused</span>
+            )
+          ) : used ? (
             <span style={{
-              fontSize: 11, fontWeight: 700, background: '#e0f2fe', color: '#0369a1',
+              fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#166534',
               padding: '3px 8px', borderRadius: 999,
-            }}>⚡ Auto · ✓ Used</span>
+            }}>✓ Used</span>
           ) : (
-            <span style={{
-              fontSize: 11, fontWeight: 600, background: '#fef3c7', color: '#92400e',
-              padding: '3px 8px', borderRadius: 999,
-            }}>⚡ Paused</span>
-          )
-        ) : used ? (
-          <span style={{
-            fontSize: 11, fontWeight: 700, background: '#dcfce7', color: '#166534',
-            padding: '3px 8px', borderRadius: 999,
-          }}>✓ Used</span>
-        ) : (
-          <span style={{
-            fontSize: 11, color: 'var(--bark)',
-            padding: '3px 8px', borderRadius: 999,
-            border: '1px solid var(--sand)',
-          }}>Mark used</span>
-        )}
+            <>
+              <span
+                onClick={e => { e.stopPropagation(); setEditing(v => !v) }}
+                style={partial
+                  ? { ...pill, fontWeight: 700, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }
+                  : pill}
+              >{partial ? '◐ Some used · edit' : 'Some used'}</span>
+              <span style={pill}>Mark used</span>
+            </>
+          )}
+        </div>
       </div>
+      {editing && !ap && !used && (
+        <PartialUseEditor
+          amountCents={credit.amount_cents}
+          usedCents={credit.used_cents}
+          onSave={cents => { setEditing(false); onSetUsed(credit.id, cents) }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
     </div>
   )
 }
 
 // ── Card accordion ─────────────────────────────────────────────
 
-function CardAccordion({ card, credits, onToggle }: {
+function CardAccordion({ card, credits, onToggle, onSetUsed }: {
   card: Card
   credits: EnrichedCredit[]
   onToggle: (id: string, used: boolean) => void
+  onSetUsed: (id: string, usedCents: number) => void
 }) {
   const [open, setOpen] = useState(false)
 
@@ -202,7 +232,7 @@ function CardAccordion({ card, credits, onToggle }: {
           {credits.length === 0 ? (
             <p style={{ padding: '16px 20px', fontSize: 13, color: 'var(--bark)' }}>No credits configured.</p>
           ) : (
-            credits.map(c => <CreditRow key={c.id} credit={c} onToggle={onToggle} />)
+            credits.map(c => <CreditRow key={c.id} credit={c} onToggle={onToggle} onSetUsed={onSetUsed} />)
           )}
         </div>
       )}
@@ -245,10 +275,11 @@ function Q2ResetBanner({ today }: { today: string }) {
 
 // ── Credits page ───────────────────────────────────────────────
 
-function CreditsPage({ cards, credits, onToggle, today }: {
+function CreditsPage({ cards, credits, onToggle, onSetUsed, today }: {
   cards: Card[]
   credits: EnrichedCredit[]
   onToggle: (id: string, used: boolean) => void
+  onSetUsed: (id: string, usedCents: number) => void
   today: string
 }) {
   // All credits are displayed — non-primary single-instance rows show in the card but are excluded from totals
@@ -292,6 +323,7 @@ function CreditsPage({ cards, credits, onToggle, today }: {
           card={card}
           credits={creditsByCard.get(card.id) ?? []}
           onToggle={onToggle}
+          onSetUsed={onSetUsed}
         />
       ))}
 
@@ -303,6 +335,7 @@ function CreditsPage({ cards, credits, onToggle, today }: {
           card={card}
           credits={creditsByCard.get(card.id) ?? []}
           onToggle={onToggle}
+          onSetUsed={onSetUsed}
         />
       ))}
     </div>
@@ -605,6 +638,37 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
     }
   }, [credits, router])
 
+  // "Some used" — set the exact amount used this period (non-autopilot credits).
+  // 0 clears the usage row; the full amount is the same as Mark used.
+  const handleSetUsed = useCallback(async (id: string, usedCents: number) => {
+    const before = credits.find(c => c.id === id)
+    if (!before || before.autopilot) return
+    const cents = Math.max(0, Math.min(before.amount_cents, Math.round(usedCents)))
+
+    setCredits(prev => prev.map(c =>
+      c.id !== id ? c : {
+        ...c,
+        used_cents:      cents,
+        remaining_cents: c.amount_cents - cents,
+        is_used:         cents >= c.amount_cents,
+        ytd_used_cents:  cents,
+      }
+    ))
+
+    try {
+      const res = cents === 0
+        ? await fetch(`/api/credits/${id}/unmark`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        : await fetch(`/api/credits/${id}/log`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount_cents: cents, exact: true }),
+          })
+      if (!res.ok) throw new Error('save failed')
+    } catch {
+      // Revert to the pre-edit state on failure
+      setCredits(prev => prev.map(c => c.id !== id ? c : before))
+    }
+  }, [credits])
+
   const tabs = [
     { id: 'today'   as const, label: 'Today',         icon: '🎯' },
     { id: 'credits' as const, label: 'Credits',       icon: '💳' },
@@ -695,10 +759,10 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
           </div>
 
           {tab === 'today' && (
-            <TodayPage cards={cards} credits={credits} onToggle={handleToggle} today={today} />
+            <TodayPage cards={cards} credits={credits} onToggle={handleToggle} onSetUsed={handleSetUsed} today={today} />
           )}
           {tab === 'credits' && (
-            <CreditsPage cards={cards} credits={credits} onToggle={handleToggle} today={today} />
+            <CreditsPage cards={cards} credits={credits} onToggle={handleToggle} onSetUsed={handleSetUsed} today={today} />
           )}
           {tab === 'points' && (
             <PointsPage
