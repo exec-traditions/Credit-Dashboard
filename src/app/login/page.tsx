@@ -49,11 +49,13 @@ export default function LoginPage() {
         </p>
 
         <form onSubmit={handleSubmit}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600,
+          <label htmlFor="password" style={{ display: 'block', fontSize: 12, fontWeight: 600,
             color: 'var(--bark)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.06em' }}>
             Password
           </label>
           <input
+            id="password"
+            name="password"
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
