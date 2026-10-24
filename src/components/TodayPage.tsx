@@ -45,6 +45,7 @@ const HIDDEN_ON_TODAY = new Set<string>([
   'Lyft Pink Credit',
   'Peloton Credit',
   'DoorDash DashPass Credit',
+  'Airbnb Experiences Credit (unlock w/ Luxe stay)',
 ])
 
 export default function TodayPage({ cards, credits, onToggle, onSetUsed, today: todayStr }: {
@@ -124,7 +125,7 @@ export default function TodayPage({ cards, credits, onToggle, onSetUsed, today: 
     .reduce((s, q) => s + q.credit.remaining_cents, 0)
   const critical = queue.filter(q => q.urg === 'critical' && !q.credit.is_used)
 
-  // ── Group same-name queue items (e.g. "Plat Hotel Credit (FHR/THC)" x 6) ──
+  // ── Group same-name queue items (e.g. "Plat Lodging Credit (FHR/THC/Luxe)" x 6) ──
   // Order preserved from `queue` (already sorted by deadline → value); each
   // group surfaces at the position of its first (soonest) instance.
   type Group = { name: string; items: QueueItem[] }

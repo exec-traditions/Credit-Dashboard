@@ -12,7 +12,7 @@ const PROGRAM_ISSUER: Record<HotelProgram, string> = {
   fhr: 'Amex', thc: 'Amex', edit: 'Chase', citi_travel: 'Citi', none: '—',
 }
 const PROGRAM_CREDIT_NAME: Record<HotelProgram, string> = {
-  fhr: 'Plat Hotel Credit (FHR/THC)', thc: 'Plat Hotel Credit (FHR/THC)',
+  fhr: 'Plat Lodging Credit (FHR/THC/Luxe)', thc: 'Plat Lodging Credit (FHR/THC/Luxe)',
   edit: 'The Edit Hotel Credit', citi_travel: 'Annual Hotel Benefit', none: '',
 }
 const PROGRAM_INCREMENT_CENTS: Record<HotelProgram, number> = {

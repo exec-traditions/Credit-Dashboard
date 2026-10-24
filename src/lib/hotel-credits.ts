@@ -14,8 +14,8 @@ export type Program = 'fhr' | 'thc' | 'edit' | 'citi_travel'
 
 /** Which credit (by exact name, as seeded in the `credits` table) each program draws on. */
 export const PROGRAM_CREDIT_NAME: Record<Program, string> = {
-  fhr:          'Plat Hotel Credit (FHR/THC)',
-  thc:          'Plat Hotel Credit (FHR/THC)',
+  fhr:          'Plat Lodging Credit (FHR/THC/Luxe)',
+  thc:          'Plat Lodging Credit (FHR/THC/Luxe)',
   edit:         'The Edit Hotel Credit',
   citi_travel:  'Annual Hotel Benefit',
 }

@@ -19,6 +19,7 @@ import PointsPage from '@/components/PointsPage'
 import BalanceCertRow from '@/components/BalanceCertRow'
 import HotelTrackerPage from '@/components/HotelTrackerPage'
 import PartialUseEditor from '@/components/PartialUseEditor'
+import BenefitsGuidePage from '@/components/BenefitsGuidePage'
 
 interface Props {
   cards:              Card[]
@@ -569,7 +570,7 @@ function CertsPage({ certificates, cards, certRedemptions: initRedemptions, cert
 // ── Main dashboard ─────────────────────────────────────────────
 
 export default function DashboardClient({ cards, credits: initialCredits, certificates: initialCertificates, certRedemptions, certBalanceTransactions: initialCertBalanceTx, hotelWeekends, hotelBookings, pointsAccounts: initialPointsAccounts, pointTransactions: initialPointTx, today }: Props) {
-  const [tab, setTab] = useState<'today' | 'credits' | 'points' | 'certs' | 'hotels'>('today')
+  const [tab, setTab] = useState<'today' | 'credits' | 'points' | 'certs' | 'hotels' | 'guide'>('today')
   const [credits, setCredits] = useState(initialCredits)
   const [pointsAccounts, setPointsAccounts] = useState(initialPointsAccounts)
   const [pointTransactions, setPointTransactions] = useState(initialPointTx)
@@ -675,6 +676,7 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
     { id: 'points'  as const, label: 'Points',        icon: '⭐' },
     { id: 'certs'   as const, label: 'Certificates',  icon: '🎟' },
     { id: 'hotels'  as const, label: 'Hotel Tracker', icon: '🏨' },
+    { id: 'guide'   as const, label: 'Benefits Guide', icon: '📖' },
   ]
 
   return (
@@ -785,6 +787,7 @@ export default function DashboardClient({ cards, credits: initialCredits, certif
               onTransactionRemoved={handleCertTxRemoved}
             />
           )}
+          {tab === 'guide' && <BenefitsGuidePage cards={cards} />}
           {tab === 'hotels' && (
             <HotelTrackerPage weekends={hotelWeekends} bookings={hotelBookings} cards={cards} credits={credits} />
           )}
